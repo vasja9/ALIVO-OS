@@ -1,14 +1,21 @@
 # ALIVO-OS
 
-ALIVO-OS is an AI-first platform for health education, publishing, automation, and knowledge management.
+**AI Business Operating System**
+
+## Status
+
+- Development Phase: Build 0 – Repository Foundation
+- Specification: v1.0 (Frozen)
+- Architecture: Frozen
 
 ## Vision
-Build a modular operating system powered by specialized AI agents.
 
-## Planned modules
-- AI Core
-- Knowledge Base
-- Book Production
-- Website Automation
-- Marketing
-- Analytics
+ALIVO-OS is an AI Business Operating System built around a stable kernel, business-first architecture, and CEO-governed automation.
+
+## Development Rules
+
+- Implement Specification v1.0 only.
+- No feature additions during Build Phase.
+- Simplicity over complexity.
+- Constitution-driven development.
+- CEO has final authority over business rules.
