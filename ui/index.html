@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ALIVO OS — CEO Command Center</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0a0a0b;
+      --panel-2: #111113;
+      --line: rgba(198, 20, 35, 0.42);
+      --line-soft: rgba(255,255,255,0.08);
+      --red: #c81423;
+      --red-bright: #ff2639;
+      --red-deep: #4f090f;
+      --text: #f4f4f5;
+      --muted: #8d8d93;
+      --green: #39d353;
+      --amber: #ffb020;
+      --shadow: 0 0 28px rgba(198, 20, 35, 0.13);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { overflow-x: hidden; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 190px minmax(0, 1fr);
+      background:
+        radial-gradient(circle at 55% 8%, rgba(135, 0, 15, .15), transparent 32%),
+        linear-gradient(180deg, #060606 0%, #030303 100%);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line-soft);
+      background: rgba(4,4,5,.96);
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+
+    .brand { display: flex; gap: 10px; align-items: center; padding: 4px 8px 20px; border-bottom: 1px solid var(--line-soft); }
+    .brand-mark { width: 34px; height: 34px; position: relative; }
+    .brand-mark::before { content: ""; position: absolute; inset: 2px 8px 2px 2px; border-left: 10px solid var(--red); border-top: 16px solid transparent; border-bottom: 16px solid transparent; transform: skewX(-10deg); }
+    .brand-mark::after { content: ""; position: absolute; width: 17px; height: 7px; background: var(--red); left: 11px; top: 18px; transform: skewX(-16deg); }
+    .brand strong { font-size: 20px; letter-spacing: .4px; }
+    .brand strong span { color: var(--red-bright); }
+
+    nav { margin-top: 18px; display: grid; gap: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; color: #b9b9bf; text-decoration: none; padding: 11px 12px; border-radius: 10px; font-size: 13px; border: 1px solid transparent; }
+    .nav-item:hover { background: rgba(255,255,255,.035); color: white; }
+    .nav-item.active { color: white; background: linear-gradient(90deg, rgba(148, 10, 22, .58), rgba(79, 9, 15, .25)); border-color: rgba(255,38,57,.24); box-shadow: inset 2px 0 0 var(--red-bright); }
+    .nav-icon { width: 18px; text-align: center; color: var(--red-bright); }
+    .sidebar-footer { margin-top: auto; display: grid; gap: 6px; }
+
+    .main { min-width: 0; }
+    .topbar { min-height: 66px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px; background: rgba(5,5,6,.86); position: sticky; top: 0; z-index: 10; backdrop-filter: blur(14px); }
+    .top-title strong { color: var(--red-bright); display: block; font-size: 14px; }
+    .top-title span { font-size: 12px; color: var(--muted); }
+    .top-actions { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+    .status { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px rgba(57,211,83,.7); }
+    .workspace, .profile { border: 1px solid var(--line-soft); background: #0b0b0d; border-radius: 10px; padding: 9px 11px; }
+
+    .content { padding: 18px; max-width: 1500px; margin: 0 auto; }
+    .hero { height: 170px; border: 1px solid var(--line-soft); border-radius: var(--radius); position: relative; overflow: hidden; display: grid; place-items: center; margin-bottom: 14px; background:
+      linear-gradient(180deg, rgba(126, 5, 17, .05), rgba(0,0,0,.7)),
+      repeating-linear-gradient(150deg, transparent 0 80px, rgba(255,38,57,.035) 81px 82px);
+    }
+    .hero::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center, rgba(198,20,35,.14), transparent 55%); }
+    .hero-logo { font-size: clamp(54px, 8vw, 112px); font-weight: 750; letter-spacing: 4px; color: rgba(255,255,255,.10); text-shadow: 0 0 35px rgba(255,38,57,.1); position: relative; line-height: .9; }
+    .hero-logo span { color: rgba(255,38,57,.16); -webkit-text-stroke: 1px rgba(255,38,57,.55); }
+    .hero-tagline { position: absolute; bottom: 19px; font-size: 13px; letter-spacing: 8px; color: rgba(255,38,57,.75); }
+
+    .kpis { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin-bottom: 10px; }
+    .card { background: linear-gradient(180deg, rgba(18,18,20,.94), rgba(8,8,9,.98)); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .kpi { padding: 15px 16px; min-height: 96px; }
+    .label { color: #c8c8cc; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .kpi-value { margin-top: 6px; font-size: 27px; font-weight: 700; color: var(--red-bright); }
+    .kpi-value.green { color: var(--green); font-size: 22px; }
+    .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+    .grid-main { display: grid; grid-template-columns: 1.1fr .9fr 1.35fr; gap: 10px; margin-bottom: 10px; }
+    .panel { padding: 14px; min-height: 274px; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .panel-title { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .link { font-size: 10px; color: var(--red-bright); }
+
+    .chart { height: 152px; position: relative; border-left: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); }
+    .chart svg { width: 100%; height: 100%; }
+    .chart-grid line { stroke: rgba(255,255,255,.06); stroke-width: 1; }
+    .chart-line { fill: none; stroke: var(--red-bright); stroke-width: 2.2; filter: drop-shadow(0 0 6px rgba(255,38,57,.5)); }
+    .chart-fill { fill: url(#area); opacity: .6; }
+    .mini-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 12px; }
+    .mini { padding: 9px; border-radius: 9px; background: rgba(255,255,255,.025); border: 1px solid rgba(255,255,255,.05); }
+    .mini b { display: block; font-size: 17px; color: #eee; }
+    .mini small { color: var(--muted); font-size: 9px; }
+
+    .agent-list, .decision-list, .activity-list, .schedule-list, .alert-list { display: grid; gap: 6px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px; background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05); }
+    .row-main { min-width: 0; }
+    .row-title { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+    .badge { font-size: 9px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .badge.good { color: var(--green); }
+    .badge.wait { color: var(--amber); }
+    .badge.danger { color: var(--red-bright); }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+
+    .bottom-grid { display: grid; grid-template-columns: 1.15fr .9fr .9fr 1.15fr; gap: 10px; }
+    .small-panel { min-height: 202px; padding: 14px; }
+
+    .performance { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 10px; }
+    .performance .metric { font-size: 9px; color: var(--muted); }
+    .performance .metric b { display: block; color: white; font-size: 13px; margin-top: 3px; }
+
+    .footer { color: #5f5f64; font-size: 10px; text-align: center; padding: 12px 0 2px; }
+
+    @media (max-width: 1250px) {
+      .app { grid-template-columns: 170px minmax(0, 1fr); }
+      .content { padding: 14px; }
+      .hero { height: 145px; }
+      .kpis { gap: 8px; }
+      .kpi { padding: 12px; min-height: 88px; }
+      .kpi-value { font-size: 23px; }
+      .grid-main { grid-template-columns: 1.2fr .95fr 1.2fr; }
+      .panel { min-height: 250px; padding: 12px; }
+      .bottom-grid { grid-template-columns: 1.1fr .9fr .9fr 1.05fr; }
+      .small-panel { min-height: 186px; padding: 12px; }
+    }
+
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 74px 1fr; }
+      .brand strong, .nav-item span, .sidebar-footer span { display: none; }
+      .brand { justify-content: center; padding-inline: 0; }
+      .nav-item { justify-content: center; }
+      .kpis { grid-template-columns: repeat(2,1fr); }
+      .grid-main, .bottom-grid { grid-template-columns: 1fr; }
+      .top-title span, .workspace { display: none; }
+    }
+
+    @media (max-width: 640px) {
+      .app { display: block; }
+      .sidebar { display: none; }
+      .topbar { padding: 0 12px; }
+      .content { padding: 10px; }
+      .hero { height: 116px; }
+      .hero-tagline { letter-spacing: 4px; font-size: 10px; }
+      .kpis { grid-template-columns: 1fr 1fr; }
+      .kpis .kpi:last-child { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <strong>ALIVO <span>OS</span></strong>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a class="nav-item active" href="#"><b class="nav-icon">⌂</b><span>Dashboard</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">☷</b><span>Work Queue</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">◎</b><span>Agents</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">▤</b><span>Content Studio</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">□</b><span>Scheduler</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">▱</b><span>Library</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">▥</b><span>Analytics</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">!</b><span>Decisions</span></a>
+        <a class="nav-item" href="#"><b class="nav-icon">⚙</b><span>System</span></a>
+      </nav>
+      <div class="sidebar-footer">
+        <a class="nav-item" href="#"><b class="nav-icon">«</b><span>Collapse</span></a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="top-title"><strong>CEO Command Center</strong><span>Full System Overview</span></div>
+        <div class="top-actions">
+          <div class="status"><span class="dot"></span><span>System Status<br><b style="color:var(--green)">Optimal</b></span></div>
+          <div class="workspace">Workspace &nbsp; <b>ALIVO Business</b></div>
+          <div class="profile">CEO &nbsp; <b style="color:var(--green)">Online</b></div>
+        </div>
+      </header>
+
+      <section class="content">
+        <div class="hero">
+          <div class="hero-logo">ALIVO <span>OS</span></div>
+          <div class="hero-tagline">BUILD • AUTOMATE • ACHIEVE</div>
+        </div>
+
+        <div class="kpis">
+          <article class="card kpi"><div class="label">Active Tasks</div><div class="kpi-value">24</div><div class="sub">Across all agents</div></article>
+          <article class="card kpi"><div class="label">Pending Approvals</div><div class="kpi-value">7</div><div class="sub">Require your attention</div></article>
+          <article class="card kpi"><div class="label">Agents Online</div><div class="kpi-value">12<small style="font-size:14px"> / 15</small></div><div class="sub">80% active</div></article>
+          <article class="card kpi"><div class="label">System Health</div><div class="kpi-value green">Optimal</div><div class="sub">All systems operational</div></article>
+          <article class="card kpi"><div class="label">Today's Progress</div><div class="kpi-value">72%</div><div class="sub">On schedule</div></article>
+        </div>
+
+        <div class="grid-main">
+          <section class="card panel">
+            <div class="panel-header"><div class="panel-title">System Overview</div><div class="link">Last 24 hours</div></div>
+            <div class="chart">
+              <svg viewBox="0 0 500 170" preserveAspectRatio="none" aria-label="System activity chart">
+                <defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d61f32" stop-opacity=".42"/><stop offset="1" stop-color="#d61f32" stop-opacity="0"/></linearGradient></defs>
+                <g class="chart-grid"><line x1="0" y1="40" x2="500" y2="40"/><line x1="0" y1="85" x2="500" y2="85"/><line x1="0" y1="130" x2="500" y2="130"/></g>
+                <path class="chart-fill" d="M0,136 L25,120 L45,128 L70,94 L95,110 L125,77 L150,88 L178,70 L205,83 L230,62 L260,75 L290,56 L320,69 L350,46 L380,61 L410,38 L442,48 L470,26 L500,38 L500,170 L0,170 Z"/>
+                <path class="chart-line" d="M0,136 L25,120 L45,128 L70,94 L95,110 L125,77 L150,88 L178,70 L205,83 L230,62 L260,75 L290,56 L320,69 L350,46 L380,61 L410,38 L442,48 L470,26 L500,38"/>
+              </svg>
+            </div>
+            <div class="mini-stats">
+              <div class="mini"><small>Automations</small><b>57</b><small>Running</small></div>
+              <div class="mini"><small>Completed</small><b>42</b><small>Today</small></div>
+              <div class="mini"><small>Revenue</small><b>€12,850</b><small>Today</small></div>
+              <div class="mini"><small>Errors</small><b style="color:var(--red-bright)">3</b><small>Critical</small></div>
+            </div>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-header"><div class="panel-title">Active Agents</div><div class="link">View all</div></div>
+            <div class="agent-list">
+              <div class="row"><div class="row-main"><div class="row-title">Researcher</div><div class="row-sub">Collecting insights</div></div><span class="badge good">Active</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Writer</div><div class="row-sub">Generating content</div></div><span class="badge good">Active</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Editor</div><div class="row-sub">Reviewing and optimizing</div></div><span class="badge wait">Waiting</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Publisher</div><div class="row-sub">Preparing for publication</div></div><span class="badge good">Active</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Analyst</div><div class="row-sub">Analyzing performance data</div></div><span class="badge good">Active</span></div>
+            </div>
+          </section>
+
+          <section class="card panel">
+            <div class="panel-header"><div class="panel-title">Pending Decisions</div><div class="link">View all</div></div>
+            <div class="decision-list">
+              <div class="row"><div class="row-main"><div class="row-title">Book Launch Strategy</div><div class="row-sub">High impact decision required</div></div><span class="badge danger">2m</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Pinterest Campaign Approval</div><div class="row-sub">Review and approve content</div></div><span class="badge danger">15m</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">Budget Allocation Q2</div><div class="row-sub">Financial approval needed</div></div><span class="badge danger">1h</span></div>
+              <div class="row"><div class="row-main"><div class="row-title">SEO Strategy Update</div><div class="row-sub">Review and provide direction</div></div><span class="badge danger">2h</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="bottom-grid">
+          <section class="card small-panel">
+            <div class="panel-header"><div class="panel-title">Recent Activity</div><div class="link">View all</div></div>
+            <div class="activity-list">
+              <div class="row"><div class="row-title">Blog post generated: “AI Productivity Systems”</div><div class="row-sub">2 min</div></div>
+              <div class="row"><div class="row-title">Pinterest board updated: “Business Growth”</div><div class="row-sub">5 min</div></div>
+              <div class="row"><div class="row-title">Book Chapter 3 completed</div><div class="row-sub">12 min</div></div>
+              <div class="row"><div class="row-title">System backup completed successfully</div><div class="row-sub">15 min</div></div>
+            </div>
+          </section>
+
+          <section class="card small-panel">
+            <div class="panel-header"><div class="panel-title">Scheduled Content</div><div class="link" style="color:var(--green)">View all</div></div>
+            <div class="schedule-list">
+              <div class="row"><div class="row-title">Blog Post: AI in Business</div><div class="row-sub">Tomorrow, 09:00</div></div>
+              <div class="row"><div class="row-title">Pinterest: Productivity Tips</div><div class="row-sub">Tomorrow, 15:00</div></div>
+              <div class="row"><div class="row-title">Book Chapter 4</div><div class="row-sub">May 22</div></div>
+              <div class="row"><div class="row-title">Weekly Insights</div><div class="row-sub">May 22</div></div>
+            </div>
+          </section>
+
+          <section class="card small-panel">
+            <div class="panel-header"><div class="panel-title">System Alerts</div><div class="link" style="color:var(--green)">View all</div></div>
+            <div class="alert-list">
+              <div class="row"><div class="row-title">All systems operational</div><span class="badge good">Now</span></div>
+              <div class="row"><div class="row-title">Backup completed successfully</div><span class="badge good">15m</span></div>
+              <div class="row"><div class="row-title">API rate limit approaching</div><span class="badge wait">30m</span></div>
+              <div class="row"><div class="row-title">Storage usage at 78%</div><span class="badge wait">1h</span></div>
+            </div>
+          </section>
+
+          <section class="card small-panel">
+            <div class="panel-header"><div class="panel-title">Business Performance</div><div class="link">This month</div></div>
+            <div class="performance">
+              <div class="metric">Revenue<b>€128,450</b></div>
+              <div class="metric">Customers<b>342</b></div>
+              <div class="metric">Published<b>86</b></div>
+              <div class="metric">Engagement<b>6.7%</b></div>
+            </div>
+            <div class="chart" style="height:105px">
+              <svg viewBox="0 0 500 120" preserveAspectRatio="none" aria-label="Business performance chart"><path class="chart-fill" d="M0,92 L35,76 L72,86 L110,59 L145,71 L182,48 L220,65 L255,41 L290,58 L325,34 L360,51 L400,26 L440,42 L500,20 L500,120 L0,120 Z"/><path class="chart-line" d="M0,92 L35,76 L72,86 L110,59 L145,71 L182,48 L220,65 L255,41 L290,58 L325,34 L360,51 L400,26 L440,42 L500,20"/></svg>
+            </div>
+          </section>
+        </div>
+
+        <div class="footer">© 2026 ALIVO OS — The Autonomous Business Operating System &nbsp; • &nbsp; v1.0.0</div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll('.nav-item').forEach((item) => {
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
+        document.querySelectorAll('.nav-item').forEach((entry) => entry.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>
