@@ -1,3 +1,4 @@
+codex/create-agents.md-for-engineering-contract
 # ALIVO-OS Engineering Contract
 
 ## Mission
@@ -54,3 +55,4 @@ Configuration alone is not implementation.
 New ideas are recorded.
 
 They are never implemented without CEO approval.
+
