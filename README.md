@@ -1,21 +1,34 @@
 # ALIVO-OS
 
-**AI Business Operating System**
+## Subtitle
 
-## Status
+Personal Operating System V1.0
 
-- Development Phase: Build 0 – Repository Foundation
-- Specification: v1.0 (Frozen)
-- Architecture: Frozen
+## Tagline
 
-## Vision
+Work Smart, Not Hard.
 
-ALIVO-OS is an AI Business Operating System built around a stable kernel, business-first architecture, and CEO-governed automation.
+## Purpose
+
+ALIVO-OS is a personal operating system designed exclusively for one user.
+
+Its purpose is to help the CEO make better business decisions, automate repetitive work and protect time for creating knowledge.
+
+## Current Status
+
+Genesis
 
 ## Development Rules
 
-- Implement Specification v1.0 only.
-- No feature additions during Build Phase.
-- Simplicity over complexity.
-- Constitution-driven development.
-- CEO has final authority over business rules.
+- Implement only approved specifications.
+- Do not introduce new functionality.
+- One task. One result.
+- Stop after completion.
+
+## Validation
+
+Verify:
+
+- README.md exists
+- no other files were created
+- repository status is clean except for README.md
