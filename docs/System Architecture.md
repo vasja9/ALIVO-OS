@@ -195,6 +195,10 @@ Verify:
 - architecture hierarchy complete
 - repository remains clean
 
+## Amendments
+
+- [ARCHITECTURE-000A — System Architecture ADR Amendment](System%20Architecture%20ADR%20Amendment.md)
+
 ## Commit Message
 
 ARCHITECTURE-000: Establish System Architecture
