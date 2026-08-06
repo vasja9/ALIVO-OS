@@ -1,21 +1,17 @@
 # ALIVO-OS
 
-**AI Business Operating System**
+## What is this?
 
-## Status
+ALIVO-OS is the Genesis implementation of a CEO-governed operating system for building and running a business.
 
-- Development Phase: Build 0 – Repository Foundation
-- Specification: v1.0 (Frozen)
-- Architecture: Frozen
+## Who is it for?
 
-## Vision
+ALIVO-OS is for founders, operators, and executive teams who need a clear system of authority, execution, and accountability.
 
-ALIVO-OS is an AI Business Operating System built around a stable kernel, business-first architecture, and CEO-governed automation.
+## Purpose
 
-## Development Rules
+The purpose of ALIVO-OS is to turn business direction into structured execution while preserving CEO authority over final decisions.
 
-- Implement Specification v1.0 only.
-- No feature additions during Build Phase.
-- Simplicity over complexity.
-- Constitution-driven development.
-- CEO has final authority over business rules.
+## Active Development Phase
+
+Genesis foundation.
