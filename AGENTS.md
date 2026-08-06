@@ -1,31 +1,58 @@
-# ALIVO-OS Agent Instructions
+codex/create-agents.md-for-engineering-contract
+# ALIVO-OS Engineering Contract
 
-These instructions apply to the entire repository.
+## Mission
 
-## Authority
+Implement approved specifications.
 
-- CEO-approved instructions in task prompts take precedence over this file.
-- `MASTER.md` is the repository constitution for engineering decisions.
-- The frozen ALIVO-OS Specification v1.0 is the implementation source of truth during the build phase.
+Do not redesign them during implementation.
 
-## Scope Discipline
+## Engineering Principles
 
-- Do not add application code unless the current approved task explicitly requires it.
-- Do not add dependencies, package manifests, generated artifacts, or lockfiles unless explicitly required.
-- Do not expand product scope beyond Specification v1.0.
-- Record deferred ideas in `docs/backlog/IDEAS.md` rather than implementing them opportunistically.
+- One task. One result.
+- Implement before documenting.
+- Never describe code instead of writing code.
+- Never report a feature as complete unless it exists.
+- Business value before technical elegance.
+- Simplicity over complexity.
+- Stop after the requested task.
 
-## Documentation and History
+## Scope Control
 
-- Keep repository-level decisions traceable through `MASTER.md` and `docs/history/CHANGELOG.md`.
-- Add task-specific history records under `docs/history/` when requested.
-- Prefer concise, durable documentation over speculative implementation notes.
+Do not introduce new functionality.
 
-## Validation Expectations
+Do not expand the specification.
 
-Before completing changes, verify:
+Record new ideas separately.
 
-1. Git branch, HEAD, and working-tree status.
-2. Required baseline files are present.
-3. No unintended application code or dependencies were added.
-4. Documentation links and paths remain accurate.
+Do not implement them.
+
+## Verification
+
+Before every task:
+
+- inspect repository state
+- inspect relevant files
+- verify baseline
+
+After every task:
+
+- validate implementation
+- report changed files
+- report limitations honestly
+
+## Completion Rule
+
+A task is complete only when the requested repository
+changes exist.
+
+Documentation alone is not implementation.
+
+Configuration alone is not implementation.
+
+## Backlog
+
+New ideas are recorded.
+
+They are never implemented without CEO approval.
+
