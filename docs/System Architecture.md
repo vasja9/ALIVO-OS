@@ -173,6 +173,88 @@ Technology may change.
 
 Business principles remain stable.
 
+## Architectural Decisions
+
+### ADR-001
+
+#### Decision
+
+Use a layered architecture with five architectural layers:
+
+- Executive Experience
+- Business Services
+- Intelligence Services
+- Integration Layer
+- Infrastructure
+
+#### Reason
+
+The layered structure separates responsibilities, preserves clarity and supports independent evolution of system concerns.
+
+#### Alternatives Considered
+
+Monolithic architecture.
+
+#### Consequences
+
+Each layer has a defined responsibility and may evolve without transferring unrelated responsibilities into other layers.
+
+### ADR-002
+
+#### Decision
+
+Dependencies flow downward only.
+
+#### Reason
+
+Downward-only dependencies prevent circular coupling and preserve architectural boundaries.
+
+#### Alternatives Considered
+
+Bidirectional dependencies between layers.
+
+#### Consequences
+
+Higher layers may use lower layers.
+
+Lower layers must never depend on higher layers.
+
+### ADR-003
+
+#### Decision
+
+Business logic remains outside the Executive Experience layer.
+
+#### Reason
+
+Presentation and business behaviour must remain independently maintainable and testable.
+
+#### Alternatives Considered
+
+Embedding business rules inside the user interface.
+
+#### Consequences
+
+The Executive Dashboard presents and initiates approved interactions but does not own business logic.
+
+### ADR-004
+
+#### Decision
+
+Modules communicate through approved interfaces and remain loosely coupled.
+
+#### Reason
+
+Explicit interfaces preserve modularity, traceability and long-term maintainability.
+
+#### Alternatives Considered
+
+Direct and unrestricted dependencies between modules.
+
+#### Consequences
+
+Module interactions remain controlled and changes in one module should not unnecessarily affect others.
+
 ## Implementation Rules
 
 Do not define implementation.
