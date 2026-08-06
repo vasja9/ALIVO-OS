@@ -65,6 +65,9 @@ export class Kernel {
       for (const module of modules) {
         await module.stop();
       }
+      for (const module of modules) {
+        await module.shutdown();
+      }
       this.lifecycle.transitionTo(KernelState.Stopped);
     } catch (error) {
       this.lifecycle.fail();
