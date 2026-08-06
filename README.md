@@ -28,7 +28,20 @@ ALIVO-OS is an AI Business Operating System built around a stable kernel, busine
 - Defer feature ideas to the backlog instead of expanding current scope.
 - Favor clarity, simplicity, and traceable decisions.
 - CEO has final authority over business rules.
+ codex/establish-technical-stewardship-for-alivo-os
+## Build 0 Baseline
+
+Build 0 is a governance-only repository foundation; the frozen Specification does not yet define product behavior. The baseline, traceability, review, and certification records are indexed in [`docs/BUILD0_BASELINE.md`](docs/BUILD0_BASELINE.md).
+
+Run the deterministic, offline audit with:
+
+```sh
+make audit
+```
+
+Build 0 is frozen. Build 1 requires explicit CEO authorization.
 
 ## Genesis-000 Scope
 
 Genesis-000 establishes repository governance, documentation structure, history tracking, and hygiene rules only. It intentionally does not introduce runnable application code, package manifests, generated artifacts, or dependency locks.
+ main
