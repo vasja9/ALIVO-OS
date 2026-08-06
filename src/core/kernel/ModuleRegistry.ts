@@ -1,19 +1,17 @@
-export interface KernelModule {
-  readonly id: string;
-  initialize(): void | Promise<void>;
-  start(): void | Promise<void>;
-  stop(): void | Promise<void>;
-}
+import { KernelModule } from "../platform/KernelModule";
+
+export { KernelModule } from "../platform/KernelModule";
 
 export class ModuleRegistry {
   private readonly modules = new Map<string, KernelModule>();
 
   register(module: KernelModule): void {
-    if (this.modules.has(module.id)) {
-      throw new Error(`Module is already registered: ${module.id}`);
+    const moduleId = module.descriptor.id;
+    if (this.modules.has(moduleId)) {
+      throw new Error(`Module is already registered: ${moduleId}`);
     }
 
-    this.modules.set(module.id, module);
+    this.modules.set(moduleId, module);
   }
 
   get(moduleId: string): KernelModule | undefined {
