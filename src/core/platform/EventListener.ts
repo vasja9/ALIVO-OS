@@ -1,6 +1,6 @@
-import { Event } from "./Event.ts";
+import { SystemEvent } from "./SystemEvent.ts";
 
 /** Standard synchronous event-listener contract. */
 export interface EventListener {
-  handle(event: Event): void;
+  handle(event: SystemEvent): void;
 }
