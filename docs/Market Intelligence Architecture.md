@@ -24,19 +24,19 @@ System Architecture
 
 ## Mission
 
-The Market Intelligence Architecture defines how ALIVO-OS continuously observes external markets, discovers emerging opportunities, understands successful market patterns and transforms verified evidence into actionable business recommendations.
+The Market Intelligence Architecture defines how the Core Platform continuously observes external markets, discovers emerging opportunities, understands successful market patterns and transforms verified evidence into actionable business recommendations.
 
 Market Intelligence exists to understand the market.
 
 It does not exist to imitate the market.
 
-Its purpose is to enable ALIVO to create superior content, superior products and superior business decisions while preserving the unique identity of the business.
+Its purpose is to enable each Business Package to create superior content, superior products and superior business decisions while preserving the unique identity of the business.
 
 ---
 
 ## Vision
 
-Market Intelligence shall become the permanent market observation capability of ALIVO-OS.
+Market Intelligence shall be the permanent market observation capability of the Core Platform.
 
 The system shall continuously learn from:
 
@@ -49,6 +49,181 @@ The system shall continuously learn from:
 - Emerging opportunities
 
 without becoming dependent on any single platform, provider or technology.
+
+---
+
+## Business Package Independence
+
+Market Intelligence is a Core Platform capability.
+
+It is independent from every individual business implementation.
+
+Its responsibility is understanding markets.
+
+It does not understand individual businesses.
+
+### Core Principle
+
+The Core Platform shall never contain domain-specific business knowledge.
+
+Business knowledge belongs exclusively to Business Packages.
+
+The Core Platform provides capabilities.
+
+Business Packages provide context.
+
+### Business Package Model
+
+```text
+Core Platform
+    ↓
+Business Package
+    ↓
+Business Operations
+```
+
+The Core Platform remains identical for every business.
+
+Only Business Packages change.
+
+### Business Package Responsibilities
+
+Business Packages define:
+
+- Business domain
+- Products
+- Services
+- Target audiences
+- Business terminology
+- Content standards
+- Brand identity
+- Business goals
+- Operational priorities
+
+Business Packages shall never modify Core Platform behaviour.
+
+### Core Platform Responsibilities
+
+The Core Platform provides:
+
+- Kernel
+- Technical Chief of Operations
+- Workflow Engine
+- Agent Workforce Manager
+- Business Memory
+- Knowledge Library
+- Knowledge Engine
+- Market Intelligence
+- Competitive Intelligence
+- Pattern Intelligence
+- Performance Intelligence
+- Recommendation Engine
+- Audit
+- Logging
+- Authorization
+- Configuration
+- Secrets Management
+- Event System
+
+The Core Platform remains business-independent.
+
+### Capability Independence
+
+Market Intelligence shall analyse capabilities rather than businesses.
+
+Examples include:
+
+- Research
+- Writing
+- Publishing
+- Market Analysis
+- Competitive Analysis
+- Performance Analysis
+- Knowledge Retrieval
+
+Capabilities remain reusable across every Business Package.
+
+### Business Package Isolation
+
+Each Business Package maintains independent:
+
+- Business Memory
+- Knowledge Library
+- Operational History
+- Recommendations
+- Business Rules
+- CEO Preferences
+- Learning History
+
+One Business Package shall never automatically modify another.
+
+### Shared Intelligence
+
+The Core Platform may identify reusable behavioural knowledge, including:
+
+- Search behaviour
+- Publishing behaviour
+- Audience behaviour
+- Content structure
+- Recommendation quality
+- Workflow efficiency
+
+Reusable intelligence requires explicit approval before becoming available to other Business Packages.
+
+### Continuous Evolution
+
+New Business Packages shall require only:
+
+- Business Memory
+- Knowledge Library
+- Business Rules
+- AI Workforce Configuration
+- Operational Workflows
+
+The Core Platform shall remain unchanged.
+
+### Future Scalability
+
+The architecture shall support an unlimited number of Business Packages, including:
+
+- ALIVO
+- BEST FINDS
+- Future consulting businesses
+- Future publishing businesses
+- Future affiliate businesses
+- Future educational businesses
+- Future commercial businesses
+
+Future packages shall require no architectural modification.
+
+### Architectural Restrictions
+
+Business Packages shall never:
+
+- Modify Core Platform architecture
+- Replace Core services
+- Change operational authority
+- Override security
+- Override audit
+- Override governance
+
+Business Packages extend.
+
+They never redefine.
+
+### Core Philosophy
+
+The value of the Business Operating System does not come from understanding one business.
+
+Its value comes from providing one stable operating platform capable of supporting many independent businesses through reusable capabilities, shared intelligence and evidence-based evolution.
+
+Technology changes.
+
+Markets change.
+
+Business Packages change.
+
+The Core Platform endures.
 
 ---
 
@@ -94,7 +269,7 @@ Only afterwards may the system recommend creating new content.
 
 The objective is never to reproduce competitor content.
 
-The objective is to understand successful market behaviour and create original content that exceeds existing market quality while preserving the ALIVO identity.
+The objective is to understand successful market behaviour and create original content that exceeds existing market quality while preserving the active Business Package's identity.
 
 ---
 
@@ -246,7 +421,7 @@ Compare external market behaviour with internal business performance.
 #### Responsibilities
 
 - Compare competitor performance.
-- Compare ALIVO performance.
+- Compare Business Package performance.
 - Measure historical improvements.
 - Measure campaign effectiveness.
 - Measure long-term trends.
