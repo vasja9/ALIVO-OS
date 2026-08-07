@@ -8,11 +8,14 @@ export type EventContextValue =
   | readonly EventContextValue[]
   | { readonly [key: string]: EventContextValue };
 
-function protect(value: EventContextValue): EventContextValue {
-  if (Array.isArray(value)) return Object.freeze(value.map(protect));
+const SENSITIVE_KEY = /(?:authorization|credential|password|secret|token|api[-_]?key|private[-_]?key|sensitive|restricted[-_]?payload)/i;
+
+function protect(value: EventContextValue, key?: string): EventContextValue {
+  if (key !== undefined && SENSITIVE_KEY.test(key)) return "[REDACTED]";
+  if (Array.isArray(value)) return Object.freeze(value.map((item) => protect(item)));
   if (value !== null && typeof value === "object") {
     const copy: Record<string, EventContextValue> = {};
-    for (const [key, child] of Object.entries(value)) copy[key] = protect(child);
+    for (const [childKey, child] of Object.entries(value)) copy[childKey] = protect(child, childKey);
     return Object.freeze(copy);
   }
   if (value === null || typeof value === "string" || typeof value === "boolean" ||
@@ -30,5 +33,9 @@ export class EventContext {
     }
     this.values = protect(values) as Readonly<Record<string, EventContextValue>>;
     Object.freeze(this);
+  }
+
+  toJSON(): Readonly<Record<string, EventContextValue>> {
+    return this.values;
   }
 }
