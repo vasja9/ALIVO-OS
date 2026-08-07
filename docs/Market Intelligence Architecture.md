@@ -145,3 +145,220 @@ Market Intelligence asks:
 > "What repeatable patterns explain that success?"
 >
 > "How can ALIVO create something demonstrably better while preserving its own identity?"
+
+---
+
+## Architecture Overview
+
+Market Intelligence is organised as a layered intelligence system.
+
+Each layer transforms raw market observations into increasingly valuable business intelligence.
+
+Information always flows downward through controlled processing stages.
+
+Business authority always flows upward toward the CEO.
+
+No layer may bypass the Technical Chief of Operations.
+
+---
+
+## Architectural Layers
+
+### Layer 1: Market Observation
+
+#### Purpose
+
+Continuously observe publicly available market information.
+
+#### Examples
+
+- Search engines
+- Pinterest
+- Amazon
+- YouTube
+- Public websites
+- Blogs
+- Public social platforms
+- News
+- Market reports
+- Future public sources
+
+This layer collects observations only.
+
+It performs no interpretation.
+
+---
+
+### Layer 2: Competitive Intelligence
+
+#### Purpose
+
+Understand how successful competitors solve market problems.
+
+#### Responsibilities
+
+- Identify high-performing content.
+- Analyse public content structure.
+- Analyse keyword usage.
+- Analyse search intent.
+- Analyse visual presentation.
+- Analyse publication patterns.
+- Analyse calls to action.
+- Analyse content freshness.
+- Analyse engagement indicators.
+- Identify repeatable success characteristics.
+
+The objective is understanding.
+
+Never imitation.
+
+---
+
+### Layer 3: Pattern Intelligence
+
+#### Purpose
+
+Transform individual observations into repeatable market patterns.
+
+#### Responsibilities
+
+- Identify recurring structures.
+- Identify recurring visual styles.
+- Identify recurring keyword combinations.
+- Identify recurring customer intent.
+- Identify recurring publication strategies.
+- Identify recurring conversion behaviour.
+- Identify emerging behavioural changes.
+- Separate coincidence from repeatable evidence.
+
+Patterns require multiple independent observations.
+
+One successful example never becomes a pattern.
+
+---
+
+### Layer 4: Performance Intelligence
+
+#### Purpose
+
+Compare external market behaviour with internal business performance.
+
+#### Responsibilities
+
+- Compare competitor performance.
+- Compare ALIVO performance.
+- Measure historical improvements.
+- Measure campaign effectiveness.
+- Measure long-term trends.
+- Measure capability performance.
+- Validate recommendations against real business results.
+
+Performance Intelligence evaluates evidence.
+
+It does not optimise automatically.
+
+---
+
+### Layer 5: Opportunity Intelligence
+
+#### Purpose
+
+Identify opportunities with measurable business potential.
+
+#### Responsibilities
+
+- Identify underserved markets.
+- Identify emerging topics.
+- Identify keyword opportunities.
+- Identify content opportunities.
+- Identify product opportunities.
+- Identify workflow opportunities.
+- Estimate confidence.
+- Estimate potential value.
+- Estimate implementation priority.
+
+Every opportunity shall reference supporting evidence.
+
+---
+
+### Layer 6: Recommendation Engine
+
+#### Purpose
+
+Transform verified intelligence into actionable recommendations.
+
+#### Inputs
+
+- Trend Intelligence
+- Competitive Intelligence
+- Pattern Intelligence
+- Performance Intelligence
+- Knowledge Engine
+- Business Memory
+
+#### Outputs
+
+- Recommendations
+- Supporting evidence
+- Confidence
+- Priority
+- Business impact estimate
+- Recommended capability
+
+Recommendations are advisory.
+
+Business authority remains outside Market Intelligence.
+
+---
+
+## Information Flow
+
+```text
+Observation
+    ↓
+Competitive Intelligence
+    ↓
+Pattern Intelligence
+    ↓
+Performance Intelligence
+    ↓
+Opportunity Intelligence
+    ↓
+Recommendation Engine
+    ↓
+Technical Chief of Operations
+    ↓
+CEO
+```
+
+Business execution begins only after operational approval.
+
+---
+
+## Architectural Separation
+
+Market Intelligence shall never:
+
+- Publish content.
+- Modify content.
+- Replace keywords automatically.
+- Change Business Memory.
+- Assign AI agents.
+- Execute workflows.
+- Approve business decisions.
+- Perform operational coordination.
+
+Those responsibilities belong to dedicated platform components.
+
+---
+
+## Core Principle
+
+Market Intelligence answers six questions.
+
+1. What is happening?
+2. Why is it happening?
+3. Which patterns explain it?
+4. Can the pattern be verified?
+5. Does the pattern create opportunity?
+6. Should the CEO consider acting?
