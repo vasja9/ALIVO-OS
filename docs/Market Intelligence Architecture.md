@@ -1,4 +1,4 @@
-# ARCHITECTURE-008A
+# ARCHITECTURE-003
 
 ## Authority
 
@@ -20,229 +20,128 @@ Architecture
 
 System Architecture
 
-## Objective
+---
 
-Create the official Market Intelligence Architecture for ALIVO-OS Personal Edition.
+## Mission
 
-## Purpose
+The Market Intelligence Architecture defines how ALIVO-OS continuously observes external markets, discovers emerging opportunities, understands successful market patterns and transforms verified evidence into actionable business recommendations.
 
-Define the architecture responsible for continuously identifying business opportunities by analysing market behaviour, search behaviour, content performance and business outcomes.
+Market Intelligence exists to understand the market.
 
-The objective is not SEO optimisation.
+It does not exist to imitate the market.
 
-The objective is continuous business opportunity discovery.
+Its purpose is to enable ALIVO to create superior content, superior products and superior business decisions while preserving the unique identity of the business.
 
-## Repository Location
+---
 
-/docs/Market Intelligence Architecture.md
+## Vision
 
-## Requirements
+Market Intelligence shall become the permanent market observation capability of ALIVO-OS.
 
-### 1. Architectural Principle
+The system shall continuously learn from:
 
-Market Intelligence continuously observes the external market and the internal business.
+- Search behaviour
+- Public competitors
+- Market trends
+- Customer intent
+- Performance data
+- Successful content patterns
+- Emerging opportunities
 
-Its purpose is to recommend the highest-value next action.
+without becoming dependent on any single platform, provider or technology.
 
-The system optimises future decisions.
+---
 
-Not historical reports.
+## Architectural Principles
 
-### 2. Information Sources
+### 1. Evidence Before Recommendation
 
-The architecture shall support information from:
+Every recommendation shall be supported by observable evidence.
 
-- Search Engines
-- Search Trends
-- Pinterest
-- Amazon
-- Website Analytics
-- Search Console
-- Content Performance
-- Book Sales
-- Product Sales
-- Advertising Data
-- Approved External Sources
-- Future approved market sources.
+No recommendation may be generated solely from assumptions.
 
-### 3. Opportunity Detection
+---
 
-The architecture shall continuously identify:
+### 2. Pattern Before Keyword
 
-- Emerging Topics
-- Growing Search Intent
-- Declining Topics
-- Content Gaps
-- Market Opportunities
-- Competitive Opportunities
-- Publishing Opportunities
-- Product Opportunities
+Individual keywords provide signals.
 
-No recommendation shall rely on a single signal.
+Patterns explain success.
 
-### 4. Internal Performance Analysis
+Market Intelligence shall prioritise discovering repeatable success patterns over isolated keyword statistics.
 
-The architecture shall analyse:
+---
 
-- Books
-- Blog Articles
-- Pinterest Pins
-- Landing Pages
-- Product Pages
-- Knowledge Assets
-- Campaigns
+### 3. Capability Before Platform
 
-The objective is to understand business performance.
+The system shall analyse business capabilities rather than individual platforms.
 
-Not merely traffic.
+Pinterest, Google, Amazon, YouTube and future platforms are information sources.
 
-### 5. Recommendation Engine
+They are not architectural dependencies.
 
-Recommendations may include:
+---
 
-- Create New Content
-- Create New Book
-- Create Blog
-- Create Landing Page
-- Create Pinterest Campaign
-- Expand Existing Topic
-- Launch New Product
-- Delay Content Creation
-- Take No Action
+### 4. Understand Before Create
 
-Every recommendation shall include supporting evidence.
+Market Intelligence shall first understand why content succeeds.
 
-### 6. Continuous Learning
+Only afterwards may the system recommend creating new content.
 
-The architecture shall learn from:
+---
 
-- Traffic
-- CTR
-- Conversions
-- Sales
-- Engagement
-- Business Outcomes
-- Approved CEO Decisions
+### 5. Never Copy
 
-Learning shall improve future recommendations.
+The objective is never to reproduce competitor content.
 
-### 7. Cross-Platform Intelligence
+The objective is to understand successful market behaviour and create original content that exceeds existing market quality while preserving the ALIVO identity.
 
-The architecture shall compare signals across platforms.
+---
 
-Examples:
+### 6. Continuous Observation
 
-- Google
-- Pinterest
-- Amazon
-- Website
-- Search Console
-- Analytics
+Market Intelligence continuously observes the market.
 
-Recommendations shall consider the combined market picture.
+Business decisions remain under CEO authority.
 
-### 8. Business Priority
+---
 
-Recommendations shall prioritise:
+### 7. Business Continuity
 
-- Business Value
-- Expected ROI
-- Strategic Alignment
-- Implementation Effort
-- Confidence
-- Market Timing
+Temporary unavailability of any external information source shall never interrupt Market Intelligence.
 
-### 9. Authority
+Alternative sources shall continue providing observations whenever possible.
+
+---
+
+## Architectural Boundary
+
+Market Intelligence observes.
+
+Market Intelligence analyses.
 
 Market Intelligence recommends.
 
-The CEO decides.
+Market Intelligence never publishes.
 
-No recommendation shall be executed automatically without an approved workflow.
+Market Intelligence never approves.
 
-### 10. Architectural Decisions
+Market Intelligence never changes Business Memory.
 
-#### ADR-001
+Market Intelligence never modifies historical published content.
 
-##### Decision
+---
 
-Market Intelligence optimises future opportunities rather than historical content.
+## Core Philosophy
 
-##### Reason
+Market Intelligence does not ask:
 
-Business growth depends on identifying the next high-value opportunity.
+> "What is popular?"
 
-##### Alternatives Considered
+Market Intelligence asks:
 
-Historical SEO optimisation.
-
-##### Consequences
-
-The system prioritises creation over maintenance.
-
-#### ADR-002
-
-##### Decision
-
-Recommendations require multiple independent market signals.
-
-##### Reason
-
-Single-source recommendations are unreliable.
-
-##### Alternatives Considered
-
-Single-platform optimisation.
-
-##### Consequences
-
-Recommendations become more robust.
-
-#### ADR-003
-
-##### Decision
-
-Internal business performance has equal importance to external search trends.
-
-##### Reason
-
-Business success is determined by real outcomes, not search volume alone.
-
-##### Alternatives Considered
-
-Search-volume-first optimisation.
-
-##### Consequences
-
-Recommendations become business-driven rather than SEO-driven.
-
-### 11. Implementation Rules
-
-Do not define SEO techniques.
-
-Do not define keyword algorithms.
-
-Do not define APIs.
-
-Do not define implementation technology.
-
-Define only the Market Intelligence Architecture.
-
-## Validation
-
-Verify:
-
-- document exists
-- correct filename
-- correct location
-- parent document is correct
-- architecture responsibilities are clearly defined
-- repository remains clean
-
-## Commit Message
-
-ARCHITECTURE-008A: Establish Market Intelligence Architecture
-
-Stop.
-
-Wait for CEO approval before any further work.
+> "Why is it successful?"
+>
+> "What repeatable patterns explain that success?"
+>
+> "How can ALIVO create something demonstrably better while preserving its own identity?"
