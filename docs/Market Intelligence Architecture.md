@@ -1,539 +1,709 @@
 # ARCHITECTURE-003
 
-## Authority
+## 1. Document Control
 
+Authority:
 CEO Approved
 
-## Title
-
+Title:
 Market Intelligence Architecture
 
-## Document Status
-
+Document Status:
 Architecture
 
-## Version
-
+Version:
 1.0
 
-## Parent Document
-
+Parent Document:
 System Architecture
 
 ---
 
-## Mission
+## 2. Objective
 
-The Market Intelligence Architecture defines how the Core Platform continuously observes external markets, discovers emerging opportunities, understands successful market patterns and transforms verified evidence into actionable business recommendations.
+Define how BOS Core continuously observes external markets, discovers
+emerging opportunities, understands successful market behaviour and
+transforms verified evidence into actionable advisory recommendations.
+
+The architecture must remain independent from individual businesses,
+platforms, providers and technologies.
+
+---
+
+## 3. Purpose
 
 Market Intelligence exists to understand the market.
 
 It does not exist to imitate the market.
 
-Its purpose is to enable each Business Package to create superior content, superior products and superior business decisions while preserving the unique identity of the business.
+Its purpose is to help each Business Package create better content,
+products and business decisions while preserving its own identity.
+
+Market Intelligence:
+
+- observes
+- analyses
+- recommends
+
+It does not publish.
+
+It does not approve.
+
+It does not execute.
 
 ---
 
-## Vision
+## 4. Mission and Vision
 
-Market Intelligence shall be the permanent market observation capability of the Core Platform.
+Mission
 
-The system shall continuously learn from:
+Continuously observe external markets, identify evidence-supported
+patterns and opportunities, and transform verified intelligence into
+advisory business recommendations.
 
-- Search behaviour
-- Public competitors
-- Market trends
-- Customer intent
-- Performance data
-- Successful content patterns
-- Emerging opportunities
+Vision
 
-without becoming dependent on any single platform, provider or technology.
+Market Intelligence is a permanent reusable BOS Core capability.
+
+It continuously learns from:
+
+- search behaviour
+- public competitors
+- market trends
+- customer intent
+- performance data
+- successful content patterns
+- emerging opportunities
+- measured recommendation outcomes
+
+It must never depend on one platform, provider or technology.
 
 ---
 
-## Business Package Independence
+## 5. Architectural Principles
 
-Market Intelligence is a Core Platform capability.
+### Evidence Before Recommendation
 
-It is independent from every individual business implementation.
+Every recommendation must be supported by observable evidence.
 
-Its responsibility is understanding markets.
+### Pattern Before Keyword
 
-It does not understand individual businesses.
+Keywords are signals.
 
-### Core Principle
+Patterns explain repeatable success.
 
-The Core Platform shall never contain domain-specific business knowledge.
+### Capability Before Platform
 
-Business knowledge belongs exclusively to Business Packages.
+Pinterest, Google, Amazon, YouTube and future platforms are sources.
 
-The Core Platform provides capabilities.
+They are not architectural dependencies.
 
-Business Packages provide context.
+### Understand Before Create
 
-### Business Package Model
+The system first understands why something succeeds.
 
-```text
-Core Platform
-    ↓
-Business Package
-    ↓
-Business Operations
-```
+Only then may it recommend creation.
 
-The Core Platform remains identical for every business.
+### Never Copy
 
-Only Business Packages change.
+Competitive Intelligence studies public market behaviour.
 
-### Business Package Responsibilities
+It never reproduces protected content, graphics, layouts, branding,
+trademarks or misleading similarity.
 
-Business Packages define:
+### Continuous Observation
 
-- Business domain
-- Products
-- Services
-- Target audiences
-- Business terminology
-- Content standards
-- Brand identity
-- Business goals
-- Operational priorities
+Market Intelligence continuously observes approved public sources.
 
-Business Packages shall never modify Core Platform behaviour.
+### Business Continuity
 
-### Core Platform Responsibilities
+Temporary loss of one source must not stop the intelligence system.
 
-The Core Platform provides:
+Alternative approved sources continue providing evidence whenever possible.
 
-- Kernel
-- Technical Chief of Operations
-- Workflow Engine
-- Agent Workforce Manager
-- Business Memory
-- Knowledge Library
-- Knowledge Engine
-- Market Intelligence
-- Competitive Intelligence
-- Pattern Intelligence
-- Performance Intelligence
-- Recommendation Engine
-- Audit
-- Logging
-- Authorization
-- Configuration
-- Secrets Management
-- Event System
+### Advisory Authority
 
-The Core Platform remains business-independent.
+Market Intelligence recommends only.
 
-### Capability Independence
+CEO authority remains final.
 
-Market Intelligence shall analyse capabilities rather than businesses.
+### Legacy Stability
 
-Examples include:
+Historical published content is not automatically rewritten.
 
-- Research
-- Writing
-- Publishing
-- Market Analysis
-- Competitive Analysis
-- Performance Analysis
-- Knowledge Retrieval
+New opportunities are preferred over mass modification of legacy content.
 
-Capabilities remain reusable across every Business Package.
+---
 
-### Business Package Isolation
+## 6. Architectural Boundary
+
+Market Intelligence may:
+
+- observe
+- analyse
+- compare
+- identify patterns
+- identify opportunities
+- prepare recommendations
+- evaluate outcomes
+
+Market Intelligence may not:
+
+- publish content
+- modify content automatically
+- replace keywords automatically
+- assign AI agents
+- execute workflows
+- perform operational coordination
+- approve business actions
+- change Business Memory
+- override TCO
+- override CEO authority
+
+---
+
+## 7. Core Philosophy
+
+Market Intelligence does not ask:
+
+"What is popular?"
+
+It asks:
+
+"Why is it successful?"
+
+"What repeatable patterns explain that success?"
+
+"Can those patterns be verified?"
+
+"Where is the opportunity?"
+
+"How can the active Business Package create something demonstrably
+better while preserving its own identity?"
+
+---
+
+## 8. Business Package Independence
+
+Market Intelligence belongs to BOS Core.
+
+Business Packages provide domain context.
+
+Examples:
+
+- ALIVO
+- BEST FINDS
+- future Business Packages
 
 Each Business Package maintains independent:
 
 - Business Memory
 - Knowledge Library
-- Operational History
-- Recommendations
 - Business Rules
 - CEO Preferences
+- Recommendations
+- Operational History
 - Learning History
+- AI Workforce configuration
+- Workflows
 
-One Business Package shall never automatically modify another.
+One Business Package must never automatically modify another.
 
-### Shared Intelligence
-
-The Core Platform may identify reusable behavioural knowledge, including:
-
-- Search behaviour
-- Publishing behaviour
-- Audience behaviour
-- Content structure
-- Recommendation quality
-- Workflow efficiency
-
-Reusable intelligence requires explicit approval before becoming available to other Business Packages.
-
-### Continuous Evolution
-
-New Business Packages shall require only:
-
-- Business Memory
-- Knowledge Library
-- Business Rules
-- AI Workforce Configuration
-- Operational Workflows
-
-The Core Platform shall remain unchanged.
-
-### Future Scalability
-
-The architecture shall support an unlimited number of Business Packages, including:
-
-- ALIVO
-- BEST FINDS
-- Future consulting businesses
-- Future publishing businesses
-- Future affiliate businesses
-- Future educational businesses
-- Future commercial businesses
-
-Future packages shall require no architectural modification.
-
-### Architectural Restrictions
-
-Business Packages shall never:
-
-- Modify Core Platform architecture
-- Replace Core services
-- Change operational authority
-- Override security
-- Override audit
-- Override governance
-
-Business Packages extend.
-
-They never redefine.
-
-### Core Philosophy
-
-The value of the Business Operating System does not come from understanding one business.
-
-Its value comes from providing one stable operating platform capable of supporting many independent businesses through reusable capabilities, shared intelligence and evidence-based evolution.
-
-Technology changes.
-
-Markets change.
-
-Business Packages change.
-
-The Core Platform endures.
+Shared learning requires explicit approval.
 
 ---
 
-## Architectural Principles
+## 9. BOS Core Independence
 
-### 1. Evidence Before Recommendation
+BOS Core must remain free of domain-specific business knowledge.
 
-Every recommendation shall be supported by observable evidence.
+BOS Core provides capabilities.
 
-No recommendation may be generated solely from assumptions.
+Business Packages provide context.
 
----
+BOS Core includes reusable capabilities such as:
 
-### 2. Pattern Before Keyword
+- Kernel
+- Technical Chief of Operations
+- Workflow Engine
+- Agent Workforce Manager
+- Event System
+- Business Memory capability
+- Knowledge Library capability
+- Knowledge Engine
+- Market Intelligence
+- Audit
+- Logging
+- Authorization
+- Configuration
+- Secrets Management
 
-Individual keywords provide signals.
+Business Packages extend BOS Core.
 
-Patterns explain success.
-
-Market Intelligence shall prioritise discovering repeatable success patterns over isolated keyword statistics.
-
----
-
-### 3. Capability Before Platform
-
-The system shall analyse business capabilities rather than individual platforms.
-
-Pinterest, Google, Amazon, YouTube and future platforms are information sources.
-
-They are not architectural dependencies.
-
----
-
-### 4. Understand Before Create
-
-Market Intelligence shall first understand why content succeeds.
-
-Only afterwards may the system recommend creating new content.
+They never redefine it.
 
 ---
 
-### 5. Never Copy
+## 10. Architecture Overview
 
-The objective is never to reproduce competitor content.
+Market Intelligence consists of:
 
-The objective is to understand successful market behaviour and create original content that exceeds existing market quality while preserving the active Business Package's identity.
+- Market Observation
+- Competitive Intelligence
+- Pattern Intelligence
+- Performance Intelligence
+- Opportunity Intelligence
+- Recommendation Engine
+- Continuous Learning
 
----
+Evidence flows through these components.
 
-### 6. Continuous Observation
+Operational authority remains with TCO.
 
-Market Intelligence continuously observes the market.
-
-Business decisions remain under CEO authority.
-
----
-
-### 7. Business Continuity
-
-Temporary unavailability of any external information source shall never interrupt Market Intelligence.
-
-Alternative sources shall continue providing observations whenever possible.
+Business authority remains with CEO.
 
 ---
 
-## Architectural Boundary
+## 11. Market Observation
 
-Market Intelligence observes.
+Market Observation collects publicly available information from approved
+sources.
 
-Market Intelligence analyses.
+Potential sources include:
 
-Market Intelligence recommends.
-
-Market Intelligence never publishes.
-
-Market Intelligence never approves.
-
-Market Intelligence never changes Business Memory.
-
-Market Intelligence never modifies historical published content.
-
----
-
-## Core Philosophy
-
-Market Intelligence does not ask:
-
-> "What is popular?"
-
-Market Intelligence asks:
-
-> "Why is it successful?"
->
-> "What repeatable patterns explain that success?"
->
-> "How can ALIVO create something demonstrably better while preserving its own identity?"
-
----
-
-## Architecture Overview
-
-Market Intelligence is organised as a layered intelligence system.
-
-Each layer transforms raw market observations into increasingly valuable business intelligence.
-
-Information always flows downward through controlled processing stages.
-
-Business authority always flows upward toward the CEO.
-
-No layer may bypass the Technical Chief of Operations.
-
----
-
-## Architectural Layers
-
-### Layer 1: Market Observation
-
-#### Purpose
-
-Continuously observe publicly available market information.
-
-#### Examples
-
-- Search engines
+- search engines
 - Pinterest
 - Amazon
 - YouTube
-- Public websites
-- Blogs
-- Public social platforms
-- News
-- Market reports
-- Future public sources
+- marketplaces
+- public websites
+- blogs
+- public social platforms
+- news
+- market reports
+- future approved public sources
 
-This layer collects observations only.
+Each observation must preserve:
 
-It performs no interpretation.
+- source
+- timestamp
+- market context
+- freshness
+- provenance
+- confidence where applicable
 
----
+Observed facts must remain separate from interpretation.
 
-### Layer 2: Competitive Intelligence
-
-#### Purpose
-
-Understand how successful competitors solve market problems.
-
-#### Responsibilities
-
-- Identify high-performing content.
-- Analyse public content structure.
-- Analyse keyword usage.
-- Analyse search intent.
-- Analyse visual presentation.
-- Analyse publication patterns.
-- Analyse calls to action.
-- Analyse content freshness.
-- Analyse engagement indicators.
-- Identify repeatable success characteristics.
-
-The objective is understanding.
-
-Never imitation.
+Raw observations must never be silently modified.
 
 ---
 
-### Layer 3: Pattern Intelligence
+## 12. Competitive Intelligence
 
-#### Purpose
+Purpose
 
-Transform individual observations into repeatable market patterns.
+Understand why successful public market content and offers perform well.
 
-#### Responsibilities
+Competitive Intelligence may analyse:
 
-- Identify recurring structures.
-- Identify recurring visual styles.
-- Identify recurring keyword combinations.
-- Identify recurring customer intent.
-- Identify recurring publication strategies.
-- Identify recurring conversion behaviour.
-- Identify emerging behavioural changes.
-- Separate coincidence from repeatable evidence.
+- titles
+- headlines
+- descriptions
+- keywords
+- search intent
+- content structure
+- information hierarchy
+- visual composition
+- graphic style
+- colour palette
+- typography
+- layout structure
+- calls to action
+- publication timing
+- content freshness
+- public engagement indicators
+- public metadata
+- audience targeting
+- problem-solving approach
 
-Patterns require multiple independent observations.
+It identifies:
 
-One successful example never becomes a pattern.
+- high-performing content
+- recurring approaches
+- competitive gaps
+- underserved topics
+- weak explanations
+- outdated content
+- visual weaknesses
+- emerging demand
 
----
+Competitive Intelligence never copies.
 
-### Layer 4: Performance Intelligence
-
-#### Purpose
-
-Compare external market behaviour with internal business performance.
-
-#### Responsibilities
-
-- Compare competitor performance.
-- Compare Business Package performance.
-- Measure historical improvements.
-- Measure campaign effectiveness.
-- Measure long-term trends.
-- Measure capability performance.
-- Validate recommendations against real business results.
-
-Performance Intelligence evaluates evidence.
-
-It does not optimise automatically.
-
----
-
-### Layer 5: Opportunity Intelligence
-
-#### Purpose
-
-Identify opportunities with measurable business potential.
-
-#### Responsibilities
-
-- Identify underserved markets.
-- Identify emerging topics.
-- Identify keyword opportunities.
-- Identify content opportunities.
-- Identify product opportunities.
-- Identify workflow opportunities.
-- Estimate confidence.
-- Estimate potential value.
-- Estimate implementation priority.
-
-Every opportunity shall reference supporting evidence.
+Its objective is understanding successful behaviour.
 
 ---
 
-### Layer 6: Recommendation Engine
+## 13. Pattern Intelligence
 
-#### Purpose
+Pattern Intelligence transforms independent observations into
+repeatable market patterns.
 
-Transform verified intelligence into actionable recommendations.
+A pattern requires:
 
-#### Inputs
+- multiple observations
+- independent sources
+- repeated behaviour
+- observable evidence
+- business relevance
+- multiple time periods where appropriate
+
+Pattern Intelligence supports:
+
+- positive patterns
+- negative patterns
+- weakening patterns
+- contradictory patterns
+
+Every pattern retains:
+
+- confidence
+- evidence count
+- independent observations
+- independent sources
+- observation window
+- freshness
+- stability
+- pattern decay
+- cross-market validation
+
+One successful example never becomes a verified pattern.
+
+Historical patterns remain traceable.
+
+Verified patterns may become Business Memory Candidates.
+
+Promotion is never automatic.
+
+CEO approval is required.
+
+---
+
+## 14. Performance Intelligence
+
+Performance Intelligence compares external market behaviour with the
+active Business Package's actual performance.
+
+It evaluates:
+
+- traffic
+- engagement
+- CTR
+- conversion
+- sales
+- campaign performance
+- content performance
+- capability performance
+- workflow performance
+- expected outcome
+- observed outcome
+- recommendation accuracy
+
+It identifies:
+
+- successful outcomes
+- failed outcomes
+- neutral outcomes
+- inconclusive outcomes
+
+Performance Intelligence evaluates.
+
+It does not automatically optimise or modify content.
+
+---
+
+## 15. Opportunity Intelligence
+
+Opportunity Intelligence converts verified evidence into potential
+business opportunities.
+
+It may identify:
+
+- underserved markets
+- emerging topics
+- declining topics
+- keyword opportunities
+- content opportunities
+- product opportunities
+- presentation opportunities
+- workflow opportunities
+- capability opportunities
+- research opportunities
+
+Every opportunity must include:
+
+- supporting evidence
+- confidence
+- freshness
+- estimated potential value
+- estimated effort
+- risk
+- implementation priority
+
+Opportunities remain advisory.
+
+---
+
+## 16. Recommendation Engine
+
+The Recommendation Engine combines multiple independent intelligence
+sources.
+
+Inputs may include:
 
 - Trend Intelligence
 - Competitive Intelligence
 - Pattern Intelligence
 - Performance Intelligence
+- Opportunity Intelligence
 - Knowledge Engine
-- Business Memory
+- active Business Package Business Memory
+- historical recommendation outcomes
+- CEO preferences
+- current strategic priorities
 
-#### Outputs
+No single source may determine a strategic recommendation.
 
-- Recommendations
-- Supporting evidence
-- Confidence
-- Priority
-- Business impact estimate
-- Recommended capability
+Every recommendation must include:
 
-Recommendations are advisory.
+- recommendation identifier
+- business objective
+- supporting evidence
+- confidence
+- estimated business value
+- estimated effort
+- priority
+- risk
+- related capabilities
+- related patterns
+- related observations
+- related Business Memory
+- recommended workflow
 
-Business authority remains outside Market Intelligence.
+Recommendations remain advisory.
+
+They do not execute themselves.
 
 ---
 
-## Information Flow
+## 17. Continuous Learning
 
-```text
+Continuous Learning improves future intelligence through measured
+business outcomes.
+
+The learning cycle is:
+
 Observation
-    ↓
+↓
+Recommendation
+↓
+CEO Decision
+↓
+Approved Workflow
+↓
+Execution
+↓
+Measured Outcome
+↓
+Performance Evaluation
+↓
+Pattern Validation
+↓
+Learning Evidence
+↓
+Future Recommendation
+
+Continuous Learning preserves:
+
+- positive outcomes
+- negative outcomes
+- failed recommendations
+- inconclusive outcomes
+- contradictory evidence
+- historical prediction accuracy
+
+Learning never rewrites historical evidence.
+
+Learning never changes Business Memory automatically.
+
+Validated learning may become a Business Memory Candidate.
+
+CEO approval is mandatory.
+
+---
+
+## 18. Information Flow
+
+Market Observation
+↓
 Competitive Intelligence
-    ↓
+↓
 Pattern Intelligence
-    ↓
+↓
 Performance Intelligence
-    ↓
+↓
 Opportunity Intelligence
-    ↓
+↓
 Recommendation Engine
-    ↓
+↓
 Technical Chief of Operations
-    ↓
+↓
 CEO
-```
+↓
+Approved Workflow
+↓
+Execution
+↓
+Measured Outcome
+↓
+Continuous Learning
+↓
+Future Intelligence
 
-Business execution begins only after operational approval.
+The Event System reports operational state.
 
----
+The TCO coordinates execution.
 
-## Architectural Separation
-
-Market Intelligence shall never:
-
-- Publish content.
-- Modify content.
-- Replace keywords automatically.
-- Change Business Memory.
-- Assign AI agents.
-- Execute workflows.
-- Approve business decisions.
-- Perform operational coordination.
-
-Those responsibilities belong to dedicated platform components.
+Market Intelligence does neither.
 
 ---
 
-## Core Principle
+## 19. Architectural Separation
 
-Market Intelligence answers six questions.
+Keep separate:
 
-1. What is happening?
-2. Why is it happening?
-3. Which patterns explain it?
-4. Can the pattern be verified?
-5. Does the pattern create opportunity?
-6. Should the CEO consider acting?
+- Market Intelligence
+- Pattern Repository
+- Business Memory
+- Knowledge Library
+- Operational History
+
+Market Intelligence contains market observations and intelligence.
+
+Pattern Repository contains verified market behaviour.
+
+Business Memory contains CEO-approved business truth.
+
+Knowledge Library contains approved reference knowledge.
+
+Operational History contains workflow and execution history.
+
+No component may silently assume authority belonging to another.
+
+---
+
+## 20. Architectural Decisions
+
+ADR-MI-001
+
+Evidence precedes recommendation.
+
+ADR-MI-002
+
+Patterns take precedence over isolated keywords.
+
+ADR-MI-003
+
+Platforms are replaceable information sources.
+
+ADR-MI-004
+
+Competitive Intelligence analyses without imitation.
+
+ADR-MI-005
+
+Business Memory remains separate.
+
+ADR-MI-006
+
+Recommendations have advisory authority only.
+
+ADR-MI-007
+
+Measured outcomes feed Continuous Learning.
+
+ADR-MI-008
+
+Business Packages remain isolated.
+
+ADR-MI-009
+
+BOS Core remains business-independent.
+
+ADR-MI-010
+
+Market Intelligence is a reusable BOS Core capability.
+
+ADR-MI-011
+
+Historical evidence and legacy content remain stable.
+
+ADR-MI-012
+
+Shared learning requires explicit approval.
+
+---
+
+## 21. Implementation Rules
+
+Do not define AI vendors.
+
+Do not define platform-specific APIs.
+
+Do not define databases.
+
+Do not define SDKs.
+
+Do not define implementation technology.
+
+Do not embed Business Package domain knowledge into BOS Core.
+
+Do not bypass TCO.
+
+Do not bypass CEO authority.
+
+Do not automatically publish.
+
+Do not automatically modify Business Memory.
+
+Do not automatically rewrite historical content.
+
+---
+
+## 22. Validation
+
+ARCHITECTURE-003 is valid only when:
+
+- Market Intelligence remains advisory.
+- Competitive Intelligence analyses public sources without imitation.
+- Pattern Intelligence requires multiple independent observations.
+- Positive and negative evidence are preserved.
+- Pattern confidence and decay are supported.
+- Cross-market validation is supported.
+- Performance Intelligence evaluates real outcomes.
+- Opportunity Intelligence produces evidence-based opportunities.
+- Recommendation Engine combines multiple independent evidence sources.
+- Continuous Learning preserves measured outcomes.
+- Business Memory remains separate.
+- Business Packages remain isolated.
+- ALIVO remains a Business Package.
+- BEST FINDS remains a Business Package.
+- BOS Core remains business-independent.
+- Shared learning requires explicit approval.
+- TCO remains operational authority.
+- CEO remains final business authority.
+
+---
+
+## 23. End of ARCHITECTURE-003
+
+ARCHITECTURE-003 ends here.
