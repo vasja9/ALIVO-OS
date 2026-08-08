@@ -1,0 +1,38 @@
+import { AuditEvent } from "../../../core/platform/AuditEvent.ts";
+import { AuditEventType } from "../../../core/platform/AuditEventType.ts";
+import { AuditRecorder } from "../../../core/platform/AuditRecorder.ts";
+import { Event } from "../../../core/platform/Event.ts";
+import { EventBus } from "../../../core/platform/EventBus.ts";
+import { EventId } from "../../../core/platform/EventId.ts";
+import { EventType } from "../../../core/platform/EventType.ts";
+import { BusinessPackageId } from "../MarketIntelligenceDomain.ts";
+import { MarketSourceAdapterId,MarketSourceAvailability,MarketSourceCapability,MarketSourceDescriptor,MarketSourceHealth,MarketSourceHealthState,MarketSourceIntegrationException,MarketSourceRequirement,MarketSourceSelection,MarketSourceState } from "./MarketSourceIntegrationDomain.ts";
+import type { MarketSourceAdapter } from "./MarketSourceIntegrationDomain.ts";
+
+export class MarketSourceRegistry {
+  readonly #adapters=new Map<string,MarketSourceAdapter>(); readonly #descriptors=new Map<string,MarketSourceDescriptor>();
+  register(adapter:MarketSourceAdapter){if(!(adapter?.id instanceof MarketSourceAdapterId))throw new MarketSourceIntegrationException("Adapter identity is invalid");if(this.#adapters.has(adapter.id.value))throw new MarketSourceIntegrationException("Adapter identity is already registered","DUPLICATE_ADAPTER");const descriptor=adapter.descriptor();if(descriptor.adapterId.value!==adapter.id.value)throw new MarketSourceIntegrationException("Adapter and descriptor identity differ");this.#adapters.set(adapter.id.value,adapter);this.#descriptors.set(adapter.id.value,descriptor);return descriptor;}
+  adapter(id:MarketSourceAdapterId){return this.#adapters.get(id.value);} descriptor(id:MarketSourceAdapterId){return this.#descriptors.get(id.value);}
+  all(){return Object.freeze([...this.#descriptors.values()].sort((a,b)=>a.priority-b.priority||a.registeredAt.getTime()-b.registeredAt.getTime()||a.adapterId.value.localeCompare(b.adapterId.value)));}
+  discover(filters:{capability?:MarketSourceCapability;businessPackageId?:BusinessPackageId;state?:MarketSourceState;availability?:MarketSourceAvailability;health?:MarketSourceHealthState}){return this.all().filter(d=>(!filters.capability||d.supports(filters.capability))&&(!filters.businessPackageId||!filters.capability?true:d.authorized(filters.businessPackageId,filters.capability))&&(!filters.state||d.state===filters.state)&&(!filters.availability||d.availability===filters.availability)&&(!filters.health||d.health.state===filters.health));}
+  replace(descriptor:MarketSourceDescriptor){if(!this.#descriptors.has(descriptor.adapterId.value))throw new MarketSourceIntegrationException("Adapter is not registered");this.#descriptors.set(descriptor.adapterId.value,descriptor);}
+}
+export type MarketSourceEventName="MarketSourceRegistered"|"MarketSourceAvailable"|"MarketSourceUnavailable"|"MarketSourceDegraded"|"MarketSourceMaintenanceStarted"|"MarketSourceRestored"|"MarketSourceOnHold"|"MarketSourceResumed"|"MarketSourceDisabled"|"MarketSourceRetired"|"MarketCollectionStarted"|"MarketCollectionCompleted"|"MarketCollectionFailed"|"MarketCollectionRateLimited"|"MarketNormalizationFailed";
+export class MarketSourceIntegrationService {
+  #sequence=0; constructor(readonly registry=new MarketSourceRegistry(),private readonly events?:EventBus,private readonly audit?:AuditRecorder,private readonly clock=()=>new Date()){}
+  register(adapter:MarketSourceAdapter,actor:string){const d=this.registry.register(adapter);this.report("MarketSourceRegistered",d,actor);return d;}
+  enable(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Available,MarketSourceAvailability.Available,"MarketSourceAvailable",actor);}
+  disable(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Disabled,MarketSourceAvailability.Unavailable,"MarketSourceDisabled",actor);}
+  hold(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.OnHold,undefined,"MarketSourceOnHold",actor);}
+  resume(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Available,MarketSourceAvailability.Available,"MarketSourceResumed",actor);}
+  maintenance(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Maintenance,MarketSourceAvailability.Unavailable,"MarketSourceMaintenanceStarted",actor);}
+  restore(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Available,MarketSourceAvailability.Available,"MarketSourceRestored",actor,new MarketSourceHealth(MarketSourceHealthState.Healthy,this.clock()));}
+  unavailable(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Unavailable,MarketSourceAvailability.Unavailable,"MarketSourceUnavailable",actor);}
+  retire(id:MarketSourceAdapterId,actor:string){return this.transition(id,MarketSourceState.Retired,MarketSourceAvailability.Unavailable,"MarketSourceRetired",actor);}
+  authorize(id:MarketSourceAdapterId,authorization:{businessPackageId:BusinessPackageId;capabilities:readonly MarketSourceCapability[]},actor:string){const d=this.require(id);const remaining=d.authorizations.filter(a=>a.businessPackageId.value!==authorization.businessPackageId.value);const updated=d.with({authorizations:[...remaining,authorization]});this.registry.replace(updated);this.record("BusinessPackageAuthorizationChanged",updated,actor,authorization.businessPackageId);return updated;}
+  select(requirement:MarketSourceRequirement){const eligible=this.registry.all().filter(d=>d.supports(requirement.properties.capability)&&d.authorized(requirement.properties.businessPackageId,requirement.properties.capability)&&d.state===MarketSourceState.Available&&d.availability===MarketSourceAvailability.Available&&d.health.state!==MarketSourceHealthState.Unhealthy);const preferences=requirement.preferredSourceIds.map(x=>x.value);eligible.sort((a,b)=>{const ai=preferences.indexOf(a.source.id.value),bi=preferences.indexOf(b.source.id.value);return (ai<0?Number.MAX_SAFE_INTEGER:ai)-(bi<0?Number.MAX_SAFE_INTEGER:bi);});return new MarketSourceSelection(requirement,eligible[0],Object.freeze(eligible.slice(1)),this.clock());}
+  private require(id:MarketSourceAdapterId){const d=this.registry.descriptor(id);if(!d)throw new MarketSourceIntegrationException("Adapter is not registered");if(d.state===MarketSourceState.Retired)throw new MarketSourceIntegrationException("Retired adapter cannot transition");return d;}
+  private transition(id:MarketSourceAdapterId,state:MarketSourceState,availability:MarketSourceAvailability|undefined,event:MarketSourceEventName,actor:string,health?:MarketSourceHealth){const current=this.require(id);const updated=current.with({state,...(availability&&{availability}),...(health&&{health})});this.registry.replace(updated);this.report(event,updated,actor);return updated;}
+  private report(name:MarketSourceEventName,d:MarketSourceDescriptor,actor:string){this.record(name,d,actor);if(this.events){const at=this.clock();this.events.publish(new Event({id:new EventId(`market-source-${++this.#sequence}`),type:new EventType(name),timestamp:at,source:"MarketSourceIntegration",correlationId:d.adapterId.value}));}}
+  private record(action:string,d:MarketSourceDescriptor,actor:string,p?:BusinessPackageId){if(!this.audit)return;this.audit.append(new AuditEvent({id:`market-source-audit-${++this.#sequence}`,timestamp:this.clock(),type:AuditEventType.ExternalIntegration,source:d.adapterId.value,action,result:"Recorded",responsibleIdentity:actor,context:{adapterId:d.adapterId.value,sourceId:d.source.id.value,...(p&&{businessPackageId:p.value})}}));}
+}
