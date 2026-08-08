@@ -1,6 +1,6 @@
-import { KernelModule } from "../platform/KernelModule";
+import type { KernelModule } from "../platform/KernelModule.ts";
 
-export { KernelModule } from "../platform/KernelModule";
+export type { KernelModule } from "../platform/KernelModule.ts";
 
 export class ModuleRegistry {
   private readonly modules = new Map<string, KernelModule>();

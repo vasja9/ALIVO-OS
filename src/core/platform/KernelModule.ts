@@ -1,6 +1,6 @@
-import { ModuleContext } from "./ModuleContext";
-import { ModuleDescriptor } from "./ModuleDescriptor";
-import { ModuleState } from "./ModuleState";
+import type { ModuleContext } from "./ModuleContext.ts";
+import { ModuleDescriptor } from "./ModuleDescriptor.ts";
+import type { ModuleState } from "./ModuleState.ts";
 
 /** The lifecycle contract implemented by every ALIVO-OS module. */
 export interface KernelModule {

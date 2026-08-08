@@ -1,4 +1,4 @@
-import { KernelState } from "./KernelState";
+import { KernelState } from "./KernelState.ts";
 
 const allowedTransitions: Readonly<Record<KernelState, readonly KernelState[]>> = {
   [KernelState.Created]: [KernelState.Initializing],
