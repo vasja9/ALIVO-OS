@@ -1,7 +1,8 @@
-import { KernelLifecycle } from "./KernelLifecycle";
-import { KernelModule, ModuleRegistry } from "./ModuleRegistry";
-import { ServiceRegistry } from "./ServiceRegistry";
-import { KernelState } from "./KernelState";
+import { KernelLifecycle } from "./KernelLifecycle.ts";
+import { ModuleRegistry } from "./ModuleRegistry.ts";
+import type { KernelModule } from "./ModuleRegistry.ts";
+import { ServiceRegistry } from "./ServiceRegistry.ts";
+import { KernelState } from "./KernelState.ts";
 
 export class Kernel {
   private readonly lifecycle = new KernelLifecycle();

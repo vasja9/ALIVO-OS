@@ -1,4 +1,4 @@
-import { ModuleMetadata } from "./ModuleMetadata";
+import type { ModuleMetadata } from "./ModuleMetadata.ts";
 
 /** Immutable identity and registration information for a module. */
 export class ModuleDescriptor {
