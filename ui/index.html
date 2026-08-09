@@ -1,11 +1,29 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ALIVO OS</title><link rel="stylesheet" href="styles.css"></head>
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ALIVO OS · Executive Command</title><link rel="stylesheet" href="styles.css"></head>
 <body><div id="app" class="shell">
-  <header><div class="brand"><span class="mark">A</span><div><strong>ALIVO OS</strong><small>Operational control surface</small></div></div><div class="header-status"><span class="package">Business Package <strong>ALIVO</strong></span><span class="badge operational"><i></i> Operational</span><button class="attention" aria-label="Attention items">Attention <b>0</b></button><span class="identity">CEO</span></div></header>
-  <aside><nav aria-label="Primary navigation"></nav><div class="sidebar-footer"><span>System time</span><strong id="clock">—</strong><small>Adaptive market time supplied by backend</small></div></aside>
-  <main tabindex="-1"><div class="workspace-heading"><div><p class="eyebrow">CEO workspace</p><h1 id="title">Dashboard</h1><p id="subtitle">Your operational overview</p></div><button id="refresh" class="secondary">Refresh status</button></div>
-    <section id="dashboard" class="dashboard"><div class="hero card"><p class="eyebrow">Current operation</p><h2>ALIVO OS is ready</h2><p>No known blocking condition. Detailed operational widgets arrive in their dedicated GUI implementation.</p></div><div class="answers"><article class="card"><span>What is ALIVO OS doing?</span><strong>Monitoring operations</strong><p>No active workflows</p></article><article class="card"><span>What needs my attention?</span><strong>Nothing right now</strong><p>0 actionable items</p></article><article class="card"><span>What happens next?</span><strong>Awaiting backend schedule</strong><p>Next action will appear here</p></article></div></section>
+  <header><div class="brand"><span class="mark">A</span><div><strong>ALIVO OS</strong><small>Executive command</small></div></div><div class="header-status"><span class="package">Business Package <strong id="package">ALIVO</strong></span><span class="badge operational"><i></i> Operational</span><button class="attention shell-attention" data-route="Blogs" aria-label="Attention items">Attention <b id="shell-attention">0</b></button><span class="identity">CEO</span></div></header>
+  <aside><nav aria-label="Primary navigation"></nav><div class="sidebar-footer"><span>System time</span><strong id="clock">—</strong><small>Local time · adaptive scheduling shown separately</small></div></aside>
+  <main tabindex="-1"><div class="workspace-heading"><div><p class="eyebrow">CEO workspace · <span id="scope">ALIVO</span></p><h1 id="title">Dashboard</h1><p id="subtitle">Your operational overview</p></div><button id="refresh" class="secondary">↻ Refresh</button></div>
+    <section id="dashboard" class="dashboard" aria-label="Executive Dashboard">
+      <div id="loading" class="loading" hidden aria-live="polite"><span></span><span></span><span></span></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="period-row"><div><p class="eyebrow">Performance window</p><strong id="comparison-label">30 days · vs previous period</strong></div><div class="periods" role="group" aria-label="Performance period"><button>7D</button><button class="active">30D</button><button>90D</button><button>12M</button><button>ALL</button></div></div>
+      <div class="priority-grid">
+        <article class="card performance-card"><div class="card-head"><div><p class="eyebrow">Distribution → Traffic</p><h2>Pinterest Performance Trend</h2></div><button class="link" data-route="Performance">View details →</button></div><div id="pinterest-summary" class="metric-strip"></div><div id="pinterest-chart" class="chart"></div><div class="legend"><span class="impressions">Impressions</span><span class="clicks">Outbound Clicks</span><span class="saves">Saves</span></div><div id="ctr-chart" class="ctr"></div><small id="pinterest-freshness" class="freshness"></small></article>
+        <div class="side-stack"><article class="card attention-card"><div class="card-head"><div><p class="eyebrow">Action required</p><h2>CEO Attention</h2></div><span id="attention-count" class="count">0</span></div><div id="attention-list"></div></article><article class="card next-card"><p class="eyebrow">Forward view</p><h2>What Happens Next</h2><div id="next-actions"></div></article></div>
+      </div>
+      <div class="extended-grid">
+        <article class="card span2"><div class="card-head"><div><p class="eyebrow">Content → Destination</p><h2>Blog Performance</h2></div><button class="link" data-route="Blogs">View blogs →</button></div><div id="blog-summary" class="metric-grid"></div></article>
+        <article class="card"><p class="eyebrow">Demand</p><h2>Search Discovery</h2><div id="search-summary" class="metric-grid"></div></article>
+        <article class="card"><p class="eyebrow">Observed evidence</p><h2>AI Discovery</h2><div id="ai-summary"></div></article>
+        <article class="card"><div class="card-head"><div><p class="eyebrow">Engagement</p><h2>Book Engagement</h2></div><button class="link" data-route="Library">View library →</button></div><div id="book-summary" class="metric-grid"></div></article>
+        <article class="card span2"><div class="card-head"><div><p class="eyebrow">Question → Opportunity → Learning</p><h2>Intelligence Snapshot</h2></div><button class="link" data-route="Questions">View opportunities →</button></div><div id="intelligence"></div></article>
+        <article class="card"><div class="card-head"><div><p class="eyebrow">Operations</p><h2>System Health</h2></div><button class="link" data-route="System">View system →</button></div><div id="health"></div></article>
+        <article class="card"><p class="eyebrow">Publishing</p><h2>Latest Content</h2><div id="published"></div></article>
+        <article class="card span2"><p class="eyebrow">Meaningful events only</p><h2>Recent Activity</h2><div id="activity"></div></article>
+      </div>
+    </section>
     <section id="placeholder" class="card empty" hidden><div class="empty-icon">◇</div><h2 id="empty-title"></h2><p id="empty-copy"></p><span class="badge neutral">Ready · 0 items</span></section>
-    <section class="foundations" aria-label="Workspace status foundations"><span>Loading</span><span>Ready</span><span>Empty</span><span>Error</span></section>
   </main>
-  <footer><span><i class="status-dot"></i> Backend connected</span><span>Last updated: just now</span><span>Next scheduled action: awaiting schedule</span></footer>
+  <footer><span><i class="status-dot"></i> Dashboard read model connected</span><span id="last-updated">Last updated: —</span><span id="footer-next">Next scheduled action: unavailable</span></footer>
 </div><script type="module" src="shell.js"></script></body></html>
