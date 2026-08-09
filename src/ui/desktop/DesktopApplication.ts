@@ -5,6 +5,11 @@ const secretKey = /(password|authorization|token|api.?key|secret|credential|vaul
 
 /** Sanitizes backend-provided detail before it reaches desktop rendering or logs. */
 export function sanitizeForDesktop(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value
+      .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+      .replace(/\b(password|application_password|access_token|refresh_token|api_key|master_password)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+  }
   if (Array.isArray(value)) return value.map(sanitizeForDesktop);
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? REDACTED : sanitizeForDesktop(item)]));
