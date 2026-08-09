@@ -1,0 +1,1 @@
+export class CEORecommendationReviewException extends Error{constructor(message:string,readonly code="CEO_RECOMMENDATION_REVIEW_FAILURE",options?:ErrorOptions){super(message,options);this.name="CEORecommendationReviewException";}}
