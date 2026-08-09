@@ -1,6 +1,7 @@
 import {
   BusinessPackageId, Freshness, MarketObservation, MarketSource, MarketSourceId, Provenance,
 } from "../MarketIntelligenceDomain.ts";
+import type { CredentialId } from "../../../security/credentials/CredentialVault.ts";
 
 export class MarketSourceIntegrationException extends Error {
   constructor(message: string, readonly code = "INVALID_MARKET_SOURCE_INTEGRATION") { super(message); this.name = "MarketSourceIntegrationException"; }
@@ -32,7 +33,7 @@ export class MarketSourceHealth {
   get evaluatedAt(){return new Date(this.#evaluated);} get lastSuccessfulInteraction(){return this.#success===undefined?undefined:new Date(this.#success);} get lastFailure(){return this.#failure===undefined?undefined:new Date(this.#failure);}
 }
 export interface MarketSourceAuthorization { readonly businessPackageId: BusinessPackageId; readonly capabilities: readonly MarketSourceCapability[]; }
-export interface MarketSourceDescriptorProperties { adapterId:MarketSourceAdapterId; source:MarketSource; displayName:string; capabilities:readonly MarketSourceCapability[]; state:MarketSourceState; availability:MarketSourceAvailability; health:MarketSourceHealth; authorizations:readonly MarketSourceAuthorization[]; registeredAt:Date; configurationReference?:string; priority?:number; supportedMarkets?:readonly string[]; supportedLanguages?:readonly string[]; }
+export interface MarketSourceDescriptorProperties { adapterId:MarketSourceAdapterId; source:MarketSource; displayName:string; capabilities:readonly MarketSourceCapability[]; state:MarketSourceState; availability:MarketSourceAvailability; health:MarketSourceHealth; authorizations:readonly MarketSourceAuthorization[]; registeredAt:Date; configurationReference?:string; credentialId?:CredentialId; priority?:number; supportedMarkets?:readonly string[]; supportedLanguages?:readonly string[]; }
 export class MarketSourceDescriptor {
   readonly registeredAt:Date; readonly capabilities:readonly MarketSourceCapability[]; readonly authorizations:readonly MarketSourceAuthorization[]; readonly supportedMarkets:readonly string[]; readonly supportedLanguages:readonly string[];
   constructor(readonly properties:MarketSourceDescriptorProperties){
