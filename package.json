@@ -1,0 +1,32 @@
+{
+  "name": "alivo-os",
+  "version": "1.0.0",
+  "description": "**AI Business Operating System**",
+  "private": true,
+  "main": "electron/main.cjs",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "start": "electron .",
+    "build": "tsc --project tsconfig.json",
+    "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
+    "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "com.alivo.os",
+    "productName": "ALIVO OS",
+    "files": ["electron/**/*", "ui/**/*", "package.json"]
+  }
+}
