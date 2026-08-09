@@ -19,6 +19,11 @@ export class MarketSourceCapability {
   static readonly PerformanceObservation = new MarketSourceCapability("PerformanceObservation"); static readonly TrendObservation = new MarketSourceCapability("TrendObservation");
   static readonly ProductObservation = new MarketSourceCapability("ProductObservation"); static readonly MarketObservation = new MarketSourceCapability("MarketObservation");
   static readonly QuestionObservation = new MarketSourceCapability("QuestionObservation");
+  static readonly SearchQuestionEvidence = new MarketSourceCapability("SearchQuestionEvidence");
+  static readonly CommunityQuestionEvidence = new MarketSourceCapability("CommunityQuestionEvidence");
+  static readonly QuestionAnswerEvidence = new MarketSourceCapability("QuestionAnswerEvidence");
+  static readonly VideoDiscoveryEvidence = new MarketSourceCapability("VideoDiscoveryEvidence");
+  static readonly RelatedQuestionEvidence = new MarketSourceCapability("RelatedQuestionEvidence");
   static readonly AnalyticsObservation = new MarketSourceCapability("AnalyticsObservation"); static readonly Other = new MarketSourceCapability("Other");
   readonly value: string; constructor(value: string) { this.value = text(value, "Capability"); Object.freeze(this); } equals(other: MarketSourceCapability) { return other instanceof MarketSourceCapability && other.value === this.value; }
 }
