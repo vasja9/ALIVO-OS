@@ -82,7 +82,7 @@ export class ContentStructureAnalysis implements Readonly<ContentStructureProper
 export enum EngagementAvailability { Available="Available", Unavailable="Unavailable" }
 export class EngagementSignal {
   readonly #observedAt: number;
-  constructor(readonly metricType: string, readonly observedValue: number | undefined, readonly sourceId: MarketSourceId, observedAt: Date, readonly confidence: Confidence, readonly availability: EngagementAvailability) {
+  constructor(readonly metricType: string, readonly observedValue: number | undefined, readonly sourceId: MarketSourceId, observedAt: Date, readonly confidence: Confidence, readonly availability: EngagementAvailability, readonly provenance?: Provenance, readonly ownershipContext?: string) {
     text(metricType, "Engagement metric type"); this.#observedAt=date(observedAt, "Engagement observation timestamp");
     if (availability === EngagementAvailability.Available && (!Number.isFinite(observedValue) || (observedValue as number) < 0)) throw new CompetitiveIntelligenceException("Available engagement requires a non-negative observed value", "INVALID_ENGAGEMENT");
     if (availability === EngagementAvailability.Unavailable && observedValue !== undefined) throw new CompetitiveIntelligenceException("Unavailable engagement must not contain an observed value", "INVALID_ENGAGEMENT"); Object.freeze(this);

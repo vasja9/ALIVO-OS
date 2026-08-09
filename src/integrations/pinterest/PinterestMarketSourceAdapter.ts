@@ -4,7 +4,8 @@ import type { MarketSourceAdapter } from "../../intelligence/market/integration/
 import { ExternalAuthenticationFailureType, ExternalAuthenticationId, ExternalAuthenticationMethod, ExternalAuthenticationRequest, InterruptedOperationReference } from "../../security/authentication/ExternalAuthenticationDomain.ts";
 import type { AuthenticationSessionReference } from "../../security/authentication/ExternalAuthenticationDomain.ts";
 import { CredentialId } from "../../security/credentials/CredentialVault.ts";
-import { PinterestAccessMetadata, PinterestConnectionVerificationRequest, PinterestCapabilityProbeResult } from "./PinterestConnectionVerificationDomain.ts";
+import { PinterestAccessMetadata, PinterestConnectionVerificationRequest } from "./PinterestConnectionVerificationDomain.ts";
+import type { PinterestCapabilityProbeResult } from "./PinterestConnectionVerificationDomain.ts";
 
 export enum PinterestEnvironment { Production="Production", Sandbox="Sandbox" }
 export enum PinterestAccessTier { Unknown="Unknown", Trial="Trial", Standard="Standard", Other="Other" }
