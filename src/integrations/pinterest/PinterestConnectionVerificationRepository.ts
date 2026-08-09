@@ -5,7 +5,7 @@ import { PinterestCapabilityState, PinterestConnectionState, PinterestConnection
 export class PinterestConnectionVerificationRepository {
   readonly #results=new Map<string,PinterestConnectionVerificationResult>();
   store(result:PinterestConnectionVerificationResult){if(this.#results.has(result.id.value))throw new PinterestConnectionVerificationException("Verification result is immutable","DUPLICATE_VERIFICATION");this.#results.set(result.id.value,result);}
-  get(id:PinterestConnectionVerificationId){return this.#results.get(id.value);}
+  get(id:PinterestConnectionVerificationId|{readonly id:PinterestConnectionVerificationId}){const reference=id instanceof PinterestConnectionVerificationId?id:id.id;return this.#results.get(reference.value);}
   history(businessPackageId?:BusinessPackageId){return this.ordered([...this.#results.values()].filter(x=>!businessPackageId||x.properties.businessPackageId.value===businessPackageId.value));}
   current(businessPackageId:BusinessPackageId,adapterReference?:string){return this.history(businessPackageId).filter(x=>!adapterReference||x.properties.adapterId.value===adapterReference).at(-1);}
   lastSuccessful(businessPackageId:BusinessPackageId){return this.history(businessPackageId).filter(x=>x.state===PinterestConnectionState.Available||x.state===PinterestConnectionState.PartiallyAvailable).at(-1);}

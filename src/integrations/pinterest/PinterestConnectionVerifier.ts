@@ -12,7 +12,8 @@ import { MarketSourceRegistry } from "../../intelligence/market/integration/Mark
 import { ExternalAuthenticationFailureType } from "../../security/authentication/ExternalAuthenticationDomain.ts";
 import type { CredentialMetadata } from "../../security/credentials/CredentialVault.ts";
 import { PinterestMarketSourceAdapter, PinterestTimeoutError } from "./PinterestMarketSourceAdapter.ts";
-import { PinterestAccessMetadata, PinterestCapabilityState, PinterestCapabilityUnavailableReason, PinterestCapabilityVerification, PinterestConnectionProbe, PinterestConnectionState, PinterestConnectionVerificationRequest, PinterestConnectionVerificationResult, PinterestAuthenticationVerificationState } from "./PinterestConnectionVerificationDomain.ts";
+import { PinterestAccessMetadata, PinterestCapabilityState, PinterestCapabilityUnavailableReason, PinterestCapabilityVerification, PinterestConnectionState, PinterestConnectionVerificationRequest, PinterestConnectionVerificationResult } from "./PinterestConnectionVerificationDomain.ts";
+import type { PinterestAuthenticationVerificationState, PinterestConnectionProbe } from "./PinterestConnectionVerificationDomain.ts";
 import { PinterestConnectionVerificationRepository } from "./PinterestConnectionVerificationRepository.ts";
 
 export interface PinterestCredentialMetadataBoundary { metadata(credentialId:string):CredentialMetadata|undefined; }
