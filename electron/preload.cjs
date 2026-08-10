@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("alivoSystem", Object.freeze({
   integrations: () => ipcRenderer.invoke("system:integrations"),
   openAuthentication: async (request) => navigateToSettings(await ipcRenderer.invoke("system:open-authentication", request)),
   command: (request) => ipcRenderer.invoke("system:command", request),
+  onIntegrationChanged: (listener) => {
+    if (typeof listener !== "function") return () => {};
+    const handler = () => listener();
+    ipcRenderer.on("integration:changed", handler);
+    return () => ipcRenderer.removeListener("integration:changed", handler);
+  },
 }));
 
 contextBridge.exposeInMainWorld("alivoSettings", Object.freeze({
