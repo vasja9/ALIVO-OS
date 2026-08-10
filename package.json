@@ -7,13 +7,14 @@
   "scripts": {
     "start": "electron .",
     "build": "tsc --project tsconfig.json",
+    "build:runtime": "tsc --project tsconfig.runtime.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
-    "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
-    "pack": "electron-builder --dir",
+    "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs && node --check electron/preload.cjs",
+    "pack": "npm run build:runtime && electron-builder --dir",
     "package:verify": "node scripts/verify-windows-packaging.mjs",
-    "package:win": "npm run package:verify && electron-builder --win nsis --x64 --config electron-builder.yml",
-    "dist:windows": "electron-builder --win nsis --x64",
-    "package:windows": "electron-builder --win nsis --x64",
+    "package:win": "npm run package:verify && npm run build:runtime && electron-builder --win nsis --x64 --config electron-builder.yml",
+    "dist:windows": "npm run build:runtime && electron-builder --win nsis --x64",
+    "package:windows": "npm run build:runtime && electron-builder --win nsis --x64",
     "release:archive": "python3 scripts/create_release_archive.py"
   },
   "keywords": [],
@@ -38,6 +39,7 @@
     "files": [
       "electron/**/*",
       "ui/**/*",
+      "build/runtime/**/*",
       "package.json",
       "!**/*.map",
       "!**/node_modules/.cache/**/*"
