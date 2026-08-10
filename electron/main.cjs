@@ -38,6 +38,8 @@ app.whenReady().then(async () => {
 
   await window.loadFile(path.join(__dirname, `../ui/${initialized ? "index.html" : "onboarding.html"}`));
   if (initialized) {
+    const integrationProjection = await fs.readFile(path.join(__dirname, "../ui/integration-runtime.js"), "utf8");
+    await window.webContents.executeJavaScript(integrationProjection);
     await window.webContents.insertCSS(`
       [hidden] { display: none !important; }
       :root { --bg: rgb(156, 28, 49); --panel: #7f182b; --panel2: #8f1a30; --line: rgba(255,255,255,.24); --text: #fffaf7; --muted: #f1dfe2; }
