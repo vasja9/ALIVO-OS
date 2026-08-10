@@ -26,6 +26,11 @@ build/
 dist/
 release/
 out/
+codex/modify-gitignore-for-windows-binaries
+win-unpacked/
+*.exe
+*.dll
+*.msi
 .cache/
 coverage/
 
