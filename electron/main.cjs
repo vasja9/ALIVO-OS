@@ -15,6 +15,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("runtime:status", () => runtime.status());
   ipcMain.handle("system:integrations", () => runtime.integrations());
   ipcMain.handle("system:open-authentication", (_event, request) => runtime.openAuthentication(request?.integration));
+  ipcMain.handle("system:command", (_event, request) => runtime.systemCommand(request));
+  ipcMain.handle("settings:read", (_event, request) => runtime.settingsRead(request));
+  ipcMain.handle("settings:command", (_event, request) => runtime.settingsCommand(request));
+  ipcMain.handle("settings:open-authentication", (_event, request) => runtime.openAuthentication(request?.integration));
 
   const initialized = await isInitialized();
   const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
