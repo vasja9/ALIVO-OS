@@ -1,0 +1,33 @@
+appId: com.alivo.os
+productName: ALIVO OS
+copyright: Copyright © 2026 ALIVO
+
+directories:
+  output: release
+
+files:
+  - electron/**/*
+  - ui/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}-Setup.${ext}
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  include: installer/windows-installer.nsh
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ALIVO OS
+  uninstallDisplayName: ALIVO OS
+  deleteAppDataOnUninstall: false

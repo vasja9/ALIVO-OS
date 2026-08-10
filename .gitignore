@@ -26,12 +26,26 @@ build/
 dist/
 release/
 out/
+codex/modify-gitignore-for-windows-binaries
 win-unpacked/
 *.exe
 *.dll
 *.msi
 .cache/
 coverage/
+
+# Desktop packaging outputs and generated Windows binaries
+*.exe
+*.dll
+*.msi
+*.msix
+*.appx
+*.nupkg
+*.blockmap
+win-unpacked/
+win-ia32-unpacked/
+win-arm64-unpacked/
+packaged/
 
 # Python cache artifacts
 __pycache__/
