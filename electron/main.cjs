@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { configurePersistentDataPath } = require("./paths.cjs");
@@ -10,18 +10,32 @@ async function isInitialized() { try { const state = JSON.parse(await fs.readFil
 ipcMain.handle("onboarding:complete", async () => { const target = onboardingFile(), temporary = `${target}.tmp`; await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(temporary, JSON.stringify({ schemaVersion: 1, completed: true, completedAt: new Date().toISOString() }), { mode: 0o600 }); await fs.rename(temporary, target); return true; });
 
 app.whenReady().then(async () => {
-  const runtime = createRuntimeHost(app);
+  const runtime = createRuntimeHost(app, safeStorage);
   await runtime.initialize();
+  const initialized = await isInitialized();
+  const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
+
+  let authWindow;
+  async function openAuth(request) {
+    const result = await runtime.openAuthentication(request?.integration);
+    if (result.state !== "Opened") return result;
+    if (authWindow && !authWindow.isDestroyed()) { authWindow.focus(); return result; }
+    authWindow = new BrowserWindow({ parent: window, modal: true, width: 720, height: 590, resizable: false, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "auth-preload.cjs") } });
+    authWindow.on("closed", () => { authWindow = undefined; window.webContents.send("integration:changed"); });
+    await authWindow.loadFile(path.join(__dirname, "../ui/auth.html"), { query: { integration: result.integration } });
+    return result;
+  }
+
   ipcMain.handle("runtime:status", () => runtime.status());
   ipcMain.handle("system:integrations", () => runtime.integrations());
-  ipcMain.handle("system:open-authentication", (_event, request) => runtime.openAuthentication(request?.integration));
+  ipcMain.handle("system:open-authentication", (_event, request) => openAuth(request));
   ipcMain.handle("system:command", (_event, request) => runtime.systemCommand(request));
   ipcMain.handle("settings:read", (_event, request) => runtime.settingsRead(request));
   ipcMain.handle("settings:command", (_event, request) => runtime.settingsCommand(request));
-  ipcMain.handle("settings:open-authentication", (_event, request) => runtime.openAuthentication(request?.integration));
+  ipcMain.handle("settings:open-authentication", (_event, request) => openAuth(request));
+  ipcMain.handle("auth:verify", (_event, request) => runtime.verifyAuthentication(request));
+  ipcMain.on("auth:close", () => { if (authWindow && !authWindow.isDestroyed()) authWindow.close(); });
 
-  const initialized = await isInitialized();
-  const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
   await window.loadFile(path.join(__dirname, `../ui/${initialized ? "index.html" : "onboarding.html"}`));
   if (initialized) {
     await window.webContents.insertCSS(`
