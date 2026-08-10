@@ -8,6 +8,7 @@ directories:
 files:
   - electron/**/*
   - ui/**/*
+  - build/runtime/**/*
   - package.json
 
 asar: true
