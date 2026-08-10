@@ -1,4 +1,4 @@
-.PHONY: audit build test desktop-smoke
+.PHONY: audit build test desktop-smoke package-windows release-archive
 
 audit:
 	python3 scripts/audit_build0.py
@@ -11,3 +11,9 @@ test:
 
 desktop-smoke:
 	node --check ui/shell.js && node --check electron/main.cjs
+
+package-windows:
+	npm run package:windows
+
+release-archive:
+	npm run release:archive

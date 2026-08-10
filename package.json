@@ -4,17 +4,20 @@
   "description": "**AI Business Operating System**",
   "private": true,
   "main": "electron/main.cjs",
-  "directories": {
-    "doc": "docs",
-    "test": "tests"
-  },
   "scripts": {
     "start": "electron .",
     "build": "tsc --project tsconfig.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
     "pack": "electron-builder --dir",
+codex/ensure-windows-10-and-11-compatibility
     "dist:windows": "electron-builder --win nsis --x64"
+codex/create-certified-full-program-archive
+    "package:windows": "electron-builder --win nsis --x64",
+    "release:archive": "python3 scripts/create_release_archive.py"
+    "package:windows": "electron-builder --win nsis --x64",
+    "package:verify": "node scripts/verify-packaging.cjs"
+    main
   },
   "keywords": [],
   "author": "",
@@ -29,15 +32,48 @@
   "build": {
     "appId": "com.alivo.os",
     "productName": "ALIVO OS",
+    codex/ensure-windows-10-and-11-compatibility
     "files": ["electron/**/*", "ui/**/*", "package.json"],
     "win": {
+codex/create-certified-full-program-archive
+    "files": ["electron/**/*", "ui/**/*", "package.json"],
+    "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
+    "win": { "target": "nsis" }
+    "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
+    "asar": true,
+    "directories": {
+      "buildResources": "build-resources",
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "ui/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/.cache/**/*"
+    ],
+    "win": {
+      "executableName": "ALIVO-OS",
       "target": [
         {
           "target": "nsis",
           "arch": ["x64"]
         }
+        codex/ensure-windows-10-and-11-compatibility
       ],
       "artifactName": "Setup.exe"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ALIVO OS",
+      "uninstallDisplayName": "ALIVO OS",
+      "deleteAppDataOnUninstall": fals
     }
   }
 }
