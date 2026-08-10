@@ -68,7 +68,33 @@ function createRuntimeHost(app) {
     };
   }
 
-  return Object.freeze({ initialize, status, integrations, openAuthentication });
+  async function settingsRead(request = {}) {
+    if (request.businessPackageId && request.businessPackageId !== "ALIVO") {
+      return { state: "ScopeMismatch", businessPackageId: "ALIVO" };
+    }
+    return {
+      state: runtimeLoaded ? "Connected" : "Unavailable",
+      businessPackageId: "ALIVO",
+      integrations: await integrations(),
+      runtime: await status(),
+    };
+  }
+
+  async function settingsCommand(request = {}) {
+    return {
+      state: "Unavailable",
+      message: `Governed Settings command '${request.command || "Unknown"}' is not connected to a production command gateway yet. No configuration was changed.`,
+    };
+  }
+
+  async function systemCommand(request = {}) {
+    return {
+      state: "Unavailable",
+      message: `Governed System command '${request.command || "Unknown"}' is not connected to a production command gateway yet. No operation was executed.`,
+    };
+  }
+
+  return Object.freeze({ initialize, status, integrations, openAuthentication, settingsRead, settingsCommand, systemCommand });
 }
 
 module.exports = { createRuntimeHost };
