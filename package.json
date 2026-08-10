@@ -13,7 +13,8 @@
     "build": "tsc --project tsconfig.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "dist:windows": "electron-builder --win nsis --x64"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +29,15 @@
   "build": {
     "appId": "com.alivo.os",
     "productName": "ALIVO OS",
-    "files": ["electron/**/*", "ui/**/*", "package.json"]
+    "files": ["electron/**/*", "ui/**/*", "package.json"],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Setup.exe"
+    }
   }
 }
