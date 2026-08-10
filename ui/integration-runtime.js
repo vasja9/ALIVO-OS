@@ -106,11 +106,15 @@ const integrationRuntime = (() => {
     if (lastSnapshot) apply(lastSnapshot);
   });
 
-  document.addEventListener('DOMContentLoaded', () => {
+  const start = () => {
     observer.observe(document.body, { childList: true, subtree: true });
     refresh();
     document.querySelector('#refresh')?.addEventListener('click', refresh);
-  });
+    window.alivoSystem?.onIntegrationChanged?.(refresh);
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
 
   window.alivoIntegrationRuntime = Object.freeze({ refresh });
   return { refresh };
