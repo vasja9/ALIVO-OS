@@ -24,6 +24,12 @@ temp/
 # Build and cache output
 build/
 dist/
+release/
+out/
+win-unpacked/
+*.exe
+*.dll
+*.msi
 .cache/
 coverage/
 
