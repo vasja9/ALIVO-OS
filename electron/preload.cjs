@@ -10,5 +10,12 @@ contextBridge.exposeInMainWorld("alivoRuntime", Object.freeze({
 
 contextBridge.exposeInMainWorld("alivoSystem", Object.freeze({
   integrations: () => ipcRenderer.invoke("system:integrations"),
-  openAuthentication: (request) => ipcRenderer.invoke("system:open-authentication", request),
+  openAuthentication: async (request) => {
+    const result = await ipcRenderer.invoke("system:open-authentication", request);
+    if (result?.route) {
+      window.dispatchEvent(new CustomEvent("alivo:navigate", { detail: { destination: "Settings", route: result.route } }));
+      window.dispatchEvent(new CustomEvent("alivo:settings:open"));
+    }
+    return result;
+  },
 }));
