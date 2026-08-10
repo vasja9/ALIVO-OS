@@ -1,6 +1,8 @@
 const integrationRuntime = (() => {
   let refreshing = false;
   let lastSnapshot;
+  let observerStarted = false;
+  let applyScheduled = false;
 
   const formatTime = (value) => {
     if (!value) return '—';
@@ -9,6 +11,8 @@ const integrationRuntime = (() => {
   };
 
   const stateClass = (value) => String(value || 'Unavailable').toLowerCase().replaceAll(' ', '-');
+  const setText = (node, value) => { if (node && node.textContent !== value) node.textContent = value; };
+  const setClass = (node, value) => { if (node && node.className !== value) node.className = value; };
 
   function findIntegrationCard(root, name) {
     return [...root.querySelectorAll('.integration-card')].find(card => {
@@ -29,19 +33,19 @@ const integrationRuntime = (() => {
     const status = card.querySelector('.card-head .state');
     if (status) {
       const label = connected ? 'Connected' : (summary?.state || 'Not Configured');
-      status.textContent = label;
-      status.className = `state ${stateClass(label)}`;
+      setText(status, label);
+      setClass(status, `state ${stateClass(label)}`);
     }
     const auth = definitionValue(card, 'Authentication');
     const success = definitionValue(card, 'Last success');
     const failure = definitionValue(card, 'Last failure');
     const error = definitionValue(card, 'Recent error');
-    if (auth) auth.textContent = connected ? `Configured${summary.safeIdentity ? ` · ${summary.safeIdentity}` : ''}` : (summary?.state || 'Not Configured');
-    if (success) success.textContent = connected ? formatTime(summary.checkedAt) : '—';
-    if (failure) failure.textContent = '—';
-    if (error) error.textContent = connected ? '—' : 'No verified runtime connection is available.';
+    setText(auth, connected ? `Configured${summary.safeIdentity ? ` · ${summary.safeIdentity}` : ''}` : (summary?.state || 'Not Configured'));
+    setText(success, connected ? formatTime(summary.checkedAt) : '—');
+    setText(failure, '—');
+    setText(error, connected ? '—' : 'No verified runtime connection is available.');
     const button = card.querySelector('[data-auth]');
-    if (button) button.textContent = connected ? 'Update Credential' : (name === 'WordPress' ? 'Open Authentication' : 'Connect');
+    setText(button, connected ? 'Update Credential' : (name === 'WordPress' ? 'Open Authentication' : 'Connect'));
   }
 
   function patchSettingsCard(card, summary) {
@@ -50,13 +54,13 @@ const integrationRuntime = (() => {
     const status = card.querySelector('.state');
     if (status) {
       const label = connected ? 'Connected' : (summary?.state || 'Not Configured');
-      status.textContent = label;
-      status.className = `state ${stateClass(label)}`;
+      setText(status, label);
+      setClass(status, `state ${stateClass(label)}`);
     }
     const credentialParagraph = [...card.querySelectorAll('p')].find(p => p.textContent.trim().startsWith('Credential:'));
-    if (credentialParagraph) credentialParagraph.textContent = `Credential: ${connected ? 'Configured' : (summary?.state || 'Not Configured')}`;
+    setText(credentialParagraph, `Credential: ${connected ? 'Configured' : (summary?.state || 'Not Configured')}`);
     const button = card.querySelector('[data-auth]');
-    if (button) button.textContent = connected ? 'Update' : 'Configure';
+    setText(button, connected ? 'Update' : 'Configure');
   }
 
   function patchPublishingLine(root, name, summary) {
@@ -66,11 +70,11 @@ const integrationRuntime = (() => {
     const status = line.querySelector('.state');
     if (status) {
       const label = connected ? 'Configured' : (summary?.state || 'Not Configured');
-      status.textContent = label;
-      status.className = `state ${stateClass(label)}`;
+      setText(status, label);
+      setClass(status, `state ${stateClass(label)}`);
     }
     const button = line.querySelector('[data-auth]');
-    if (button) button.textContent = connected ? 'Update' : 'Reauthorize';
+    setText(button, connected ? 'Update' : 'Reauthorize');
   }
 
   function apply(snapshot) {
@@ -103,11 +107,19 @@ const integrationRuntime = (() => {
   }
 
   const observer = new MutationObserver(() => {
-    if (lastSnapshot) apply(lastSnapshot);
+    if (!lastSnapshot || applyScheduled) return;
+    applyScheduled = true;
+    queueMicrotask(() => {
+      applyScheduled = false;
+      apply(lastSnapshot);
+    });
   });
 
   const start = () => {
-    observer.observe(document.body, { childList: true, subtree: true });
+    if (!observerStarted) {
+      observerStarted = true;
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
     refresh();
     document.querySelector('#refresh')?.addEventListener('click', refresh);
     window.alivoSystem?.onIntegrationChanged?.(refresh);
