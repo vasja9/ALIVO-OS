@@ -10,8 +10,12 @@
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
     "pack": "electron-builder --dir",
+codex/create-certified-full-program-archive
+    "package:windows": "electron-builder --win nsis --x64",
+    "release:archive": "python3 scripts/create_release_archive.py"
     "package:windows": "electron-builder --win nsis --x64",
     "package:verify": "node scripts/verify-packaging.cjs"
+    main
   },
   "keywords": [],
   "author": "",
@@ -26,6 +30,10 @@
   "build": {
     "appId": "com.alivo.os",
     "productName": "ALIVO OS",
+codex/create-certified-full-program-archive
+    "files": ["electron/**/*", "ui/**/*", "package.json"],
+    "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
+    "win": { "target": "nsis" }
     "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
     "asar": true,
     "directories": {
