@@ -13,7 +13,9 @@
     "build": "tsc --project tsconfig.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "package:verify": "node scripts/verify-windows-packaging.mjs",
+    "package:win": "npm run package:verify && electron-builder --win nsis --x64 --config electron-builder.yml"
   },
   "keywords": [],
   "author": "",
@@ -24,10 +26,5 @@
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
     "typescript": "^5.9.2"
-  },
-  "build": {
-    "appId": "com.alivo.os",
-    "productName": "ALIVO OS",
-    "files": ["electron/**/*", "ui/**/*", "package.json"]
   }
 }

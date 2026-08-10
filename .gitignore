@@ -24,8 +24,23 @@ temp/
 # Build and cache output
 build/
 dist/
+release/
+out/
 .cache/
 coverage/
+
+# Desktop packaging outputs and generated Windows binaries
+*.exe
+*.dll
+*.msi
+*.msix
+*.appx
+*.nupkg
+*.blockmap
+win-unpacked/
+win-ia32-unpacked/
+win-arm64-unpacked/
+packaged/
 
 # Python cache artifacts
 __pycache__/
