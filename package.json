@@ -4,16 +4,14 @@
   "description": "**AI Business Operating System**",
   "private": true,
   "main": "electron/main.cjs",
-  "directories": {
-    "doc": "docs",
-    "test": "tests"
-  },
   "scripts": {
     "start": "electron .",
     "build": "tsc --project tsconfig.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "package:windows": "electron-builder --win nsis",
+    "release:archive": "python3 scripts/create_release_archive.py"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +26,8 @@
   "build": {
     "appId": "com.alivo.os",
     "productName": "ALIVO OS",
-    "files": ["electron/**/*", "ui/**/*", "package.json"]
+    "files": ["electron/**/*", "ui/**/*", "package.json"],
+    "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
+    "win": { "target": "nsis" }
   }
 }
