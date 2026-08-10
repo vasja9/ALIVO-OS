@@ -10,6 +10,8 @@
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
     "pack": "electron-builder --dir",
+codex/ensure-windows-10-and-11-compatibility
+    "dist:windows": "electron-builder --win nsis --x64"
 codex/create-certified-full-program-archive
     "package:windows": "electron-builder --win nsis --x64",
     "release:archive": "python3 scripts/create_release_archive.py"
@@ -30,6 +32,9 @@ codex/create-certified-full-program-archive
   "build": {
     "appId": "com.alivo.os",
     "productName": "ALIVO OS",
+    codex/ensure-windows-10-and-11-compatibility
+    "files": ["electron/**/*", "ui/**/*", "package.json"],
+    "win": {
 codex/create-certified-full-program-archive
     "files": ["electron/**/*", "ui/**/*", "package.json"],
     "artifactName": "ALIVO-OS-v${version}-Setup.${ext}",
@@ -54,6 +59,9 @@ codex/create-certified-full-program-archive
           "target": "nsis",
           "arch": ["x64"]
         }
+        codex/ensure-windows-10-and-11-compatibility
+      ],
+      "artifactName": "Setup.exe"
       ]
     },
     "nsis": {
@@ -65,7 +73,7 @@ codex/create-certified-full-program-archive
       "createStartMenuShortcut": true,
       "shortcutName": "ALIVO OS",
       "uninstallDisplayName": "ALIVO OS",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": fals
     }
   }
 }
