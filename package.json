@@ -9,7 +9,7 @@
     "build": "tsc --project tsconfig.json",
     "build:runtime": "tsc --project tsconfig.runtime.json",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
-    "desktop:smoke": "node --check ui/shell.js && node --check ui/auth.js && node --check ui/integration-runtime.js && node --check ui/pinterest-runtime.js && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/auth-preload.cjs && node --check electron/runtime-host.cjs && node --check electron/credential-store.cjs && node --check electron/pinterest-oauth.cjs && node --check electron/pinterest-data.cjs && node --check electron/pinterest-publisher.cjs && node --check electron/pinterest-scheduler.cjs",
+    "desktop:smoke": "node --check ui/shell.js && node --check ui/auth.js && node --check ui/integration-runtime.js && node --check ui/pinterest-runtime.js && node --check ui/pinterest-scheduler-runtime.js && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/auth-preload.cjs && node --check electron/runtime-host.cjs && node --check electron/credential-store.cjs && node --check electron/pinterest-oauth.cjs && node --check electron/pinterest-data.cjs && node --check electron/pinterest-publisher.cjs && node --check electron/pinterest-scheduler.cjs",
     "pack": "npm run build:runtime && electron-builder --dir",
     "package:verify": "node scripts/verify-windows-packaging.mjs",
     "package:win": "npm run package:verify && npm run build:runtime && electron-builder --win nsis --x64 --config electron-builder.yml",
