@@ -38,4 +38,17 @@ contextBridge.exposeInMainWorld("alivoPinterest", Object.freeze({
   read: (request) => ipcRenderer.invoke("pinterest:workspace", request),
   readLive: () => ipcRenderer.invoke("pinterest:data"),
   publishTestPin: (request) => ipcRenderer.invoke("pinterest:publish-test", request),
+  scheduler: Object.freeze({
+    list: () => ipcRenderer.invoke("pinterest:scheduler:list"),
+    schedule: (request) => ipcRenderer.invoke("pinterest:scheduler:schedule", request),
+    cancel: (jobId) => ipcRenderer.invoke("pinterest:scheduler:cancel", jobId),
+    enable: (enabled) => ipcRenderer.invoke("pinterest:scheduler:enable", enabled),
+    runDue: () => ipcRenderer.invoke("pinterest:scheduler:run-due"),
+    onChanged: (listener) => {
+      if (typeof listener !== "function") return () => {};
+      const handler = () => listener();
+      ipcRenderer.on("pinterest:scheduler-changed", handler);
+      return () => ipcRenderer.removeListener("pinterest:scheduler-changed", handler);
+    },
+  }),
 }));
