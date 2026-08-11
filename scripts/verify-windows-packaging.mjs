@@ -11,6 +11,11 @@ assert.match(builderConfiguration, /target: nsis/);
 assert.match(builderConfiguration, /output: release/);
 assert.match(builderConfiguration, /include: installer\/windows-installer\.nsh/);
 assert.match(builderConfiguration, /artifactName:.*Setup\.\$\{ext\}/);
+assert.match(builderConfiguration, /executableName:\s*ALIVO OS/);
+assert.match(builderConfiguration, /perMachine:\s*true/);
+assert.match(builderConfiguration, /createDesktopShortcut:\s*always/);
+assert.match(builderConfiguration, /createStartMenuShortcut:\s*true/);
+assert.match(builderConfiguration, /runAfterFinish:\s*false/);
 assert.match(installerConfiguration, /\$\{AtLeastWin10\}/);
 
 console.log("Windows packaging configuration is valid.");
