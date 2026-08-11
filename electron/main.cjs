@@ -16,7 +16,7 @@ app.whenReady().then(async () => {
   const runtime = createRuntimeHost(app, safeStorage);
   await runtime.initialize();
   const pinterestData = createPinterestDataCollector(() => runtime.getPinterestAccessToken());
-  const pinterestPublisher = createPinterestPublisher(() => runtime.getPinterestAccessToken());
+  const pinterestPublisher = createPinterestPublisher(() => runtime.getPinterestSandboxAccessToken());
   const initialized = await isInitialized();
   const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
 
@@ -44,12 +44,7 @@ app.whenReady().then(async () => {
     const appId = String(request.appId || "").trim();
     const appSecret = String(request.appSecret || "").trim();
     if (!appId || !appSecret) return { state: "Configuration Invalid", message: "Pinterest App ID and App secret are required." };
-    const result = await startPinterestOAuth({
-      appId,
-      appSecret,
-      openExternal: (url) => shell.openExternal(url),
-      complete: (payload) => runtime.completePinterestOAuth(payload),
-    });
+    const result = await startPinterestOAuth({ appId, appSecret, openExternal: (url) => shell.openExternal(url), complete: (payload) => runtime.completePinterestOAuth(payload) });
     window.webContents.send("integration:changed");
     return result;
   });
@@ -81,14 +76,8 @@ app.whenReady().then(async () => {
     `);
   }
 
-  runtime.maintainPinterestOAuth(false).then(result => {
-    if (result?.refreshed) window.webContents.send("integration:changed");
-  }).catch(() => {});
-  const oauthMaintenance = setInterval(() => {
-    runtime.maintainPinterestOAuth(false).then(result => {
-      if (result?.refreshed) window.webContents.send("integration:changed");
-    }).catch(() => {});
-  }, 6 * 60 * 60 * 1000);
+  runtime.maintainPinterestOAuth(false).then(result => { if (result?.refreshed) window.webContents.send("integration:changed"); }).catch(() => {});
+  const oauthMaintenance = setInterval(() => { runtime.maintainPinterestOAuth(false).then(result => { if (result?.refreshed) window.webContents.send("integration:changed"); }).catch(() => {}); }, 6 * 60 * 60 * 1000);
   oauthMaintenance.unref?.();
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
