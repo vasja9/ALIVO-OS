@@ -33,3 +33,7 @@ contextBridge.exposeInMainWorld("alivoSettings", Object.freeze({
   command: (request) => ipcRenderer.invoke("settings:command", request),
   openAuthentication: async (request) => navigateToSettings(await ipcRenderer.invoke("settings:open-authentication", request)),
 }));
+
+contextBridge.exposeInMainWorld("alivoPinterest", Object.freeze({
+  read: () => ipcRenderer.invoke("pinterest:data"),
+}));
