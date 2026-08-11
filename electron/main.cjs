@@ -5,6 +5,7 @@ const { configurePersistentDataPath } = require("./paths.cjs");
 const { createRuntimeHost } = require("./runtime-host.cjs");
 const { startPinterestOAuth, REDIRECT_URI } = require("./pinterest-oauth.cjs");
 const { createPinterestDataCollector } = require("./pinterest-data.cjs");
+const { createPinterestPublisher } = require("./pinterest-publisher.cjs");
 
 configurePersistentDataPath(app);
 const onboardingFile = () => path.join(app.getPath("userData"), "state", "onboarding.json");
@@ -15,6 +16,7 @@ app.whenReady().then(async () => {
   const runtime = createRuntimeHost(app, safeStorage);
   await runtime.initialize();
   const pinterestData = createPinterestDataCollector(() => runtime.getPinterestAccessToken());
+  const pinterestPublisher = createPinterestPublisher(() => runtime.getPinterestAccessToken());
   const initialized = await isInitialized();
   const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
 
@@ -52,6 +54,11 @@ app.whenReady().then(async () => {
     return result;
   });
   ipcMain.handle("pinterest:data", () => pinterestData.snapshot());
+  ipcMain.handle("pinterest:publish-test", async (_event, request) => {
+    const result = await pinterestPublisher.create(request);
+    if (result?.state === "Published") window.webContents.send("pinterest:data-changed");
+    return result;
+  });
   ipcMain.on("auth:close", () => { if (authWindow && !authWindow.isDestroyed()) authWindow.close(); });
 
   await window.loadFile(path.join(__dirname, `../ui/${initialized ? "index.html" : "onboarding.html"}`));
