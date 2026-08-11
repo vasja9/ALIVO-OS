@@ -14,6 +14,7 @@ files:
 asar: true
 
 win:
+  executableName: ALIVO OS
   target:
     - target: nsis
       arch:
@@ -24,11 +25,13 @@ win:
 nsis:
   include: installer/windows-installer.nsh
   oneClick: false
-  perMachine: false
+  perMachine: true
   allowElevation: true
   allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  createDesktopShortcut: always
   createStartMenuShortcut: true
+  menuCategory: false
   shortcutName: ALIVO OS
   uninstallDisplayName: ALIVO OS
+  runAfterFinish: false
   deleteAppDataOnUninstall: false
