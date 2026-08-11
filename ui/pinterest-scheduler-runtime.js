@@ -33,15 +33,27 @@
     return boards.map(b => `<option value="${esc(b.name || b.id)}">${esc(b.name || b.id)}</option>`).join('');
   }
 
+  function statusDetail(job) {
+    const attempts = Number(job.attempts || 0);
+    const maxAttempts = Number(job.maxAttempts || snapshot?.maxAttempts || 3);
+    const lines = [];
+    if (job.result?.pinId) lines.push(`Pin ${esc(job.result.pinId)}`);
+    if (attempts) lines.push(`Attempt ${attempts}/${maxAttempts}`);
+    if (job.status === 'Retry Scheduled' && job.nextAttemptAt) lines.push(`Next retry ${esc(fmt(job.nextAttemptAt))}`);
+    if (job.recoveredAt) lines.push(`Recovered ${esc(fmt(job.recoveredAt))}`);
+    if (job.error && job.status !== 'Published') lines.push(esc(job.error));
+    return lines.map(line => `<small style="display:block">${line}</small>`).join('');
+  }
+
   function rows() {
-    const jobs = Array.isArray(snapshot?.jobs) ? [...snapshot.jobs].sort((a,b) => Date.parse(a.scheduledFor) - Date.parse(b.scheduledFor)) : [];
+    const jobs = Array.isArray(snapshot?.jobs) ? [...snapshot.jobs].sort((a,b) => Date.parse(a.nextAttemptAt || a.scheduledFor) - Date.parse(b.nextAttemptAt || b.scheduledFor)) : [];
     if (!jobs.length) return '<tr><td colspan="5" class="quiet">No Sandbox jobs scheduled yet.</td></tr>';
     return jobs.slice(0, 12).map(job => `<tr>
       <td>${esc(job.pin?.title || '(untitled)')}</td>
       <td>${esc(job.pin?.boardName || '—')}</td>
       <td>${esc(fmt(job.scheduledFor))}</td>
-      <td>${esc(job.status || '—')}${job.result?.pinId ? `<small style="display:block">Pin ${esc(job.result.pinId)}</small>` : ''}</td>
-      <td>${job.status === 'Scheduled' ? `<button class="link" data-scheduler-cancel="${esc(job.id)}">Cancel</button>` : ''}</td>
+      <td>${esc(job.status || '—')}${statusDetail(job)}</td>
+      <td>${['Scheduled','Retry Scheduled'].includes(job.status) ? `<button class="link" data-scheduler-cancel="${esc(job.id)}">Cancel</button>` : ''}</td>
     </tr>`).join('');
   }
 
@@ -53,14 +65,15 @@
       return;
     }
     const enabled = snapshot.enabled === true;
+    const retryCount = snapshot.counts?.['Retry Scheduled'] || 0;
     card.innerHTML = `
-      <div class="card-head"><div><p class="eyebrow">RUNTIME-005B · Pinterest Sandbox</p><h2>Scheduler</h2></div><span class="status-chip">${enabled ? 'ENABLED' : 'DISABLED'}</span></div>
-      <p class="quiet">Persistent Sandbox queue · default cadence ${esc(snapshot.defaultIntervalMinutes || 90)} minutes. Production publishing remains disabled.</p>
+      <div class="card-head"><div><p class="eyebrow">RUNTIME-005C · Pinterest Sandbox</p><h2>Scheduler</h2></div><span class="status-chip">${enabled ? 'ENABLED' : 'DISABLED'}</span></div>
+      <p class="quiet">Persistent Sandbox queue · cadence guard ${esc(snapshot.defaultIntervalMinutes || 90)} minutes · retry ${esc(snapshot.retryMinutes || 5)} minutes · max ${esc(snapshot.maxAttempts || 3)} attempts. Production publishing remains disabled.</p>
       <div class="metric-strip" style="margin-top:12px">
         <div class="metric"><span>Scheduled</span><strong>${esc(snapshot.counts?.Scheduled || 0)}</strong></div>
+        <div class="metric"><span>Retry Scheduled</span><strong>${esc(retryCount)}</strong></div>
         <div class="metric"><span>Published</span><strong>${esc(snapshot.counts?.Published || 0)}</strong></div>
         <div class="metric"><span>Failed</span><strong>${esc(snapshot.counts?.Failed || 0)}</strong></div>
-        <div class="metric"><span>Environment</span><strong>Sandbox</strong></div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin:14px 0">
         <button id="scheduler-toggle" class="secondary">${enabled ? 'Disable Scheduler' : 'Enable Scheduler'}</button>
@@ -78,7 +91,7 @@
       </div>
       <div style="margin-top:12px"><button id="scheduler-add" class="secondary">Schedule Sandbox Pin</button></div>
       <div class="data-table" style="margin-top:16px"><table><thead><tr><th>Pin</th><th>Board</th><th>Scheduled</th><th>Status</th><th></th></tr></thead><tbody>${rows()}</tbody></table></div>
-      <small class="freshness">Queue updated ${esc(fmt(snapshot.updatedAt))}</small>`;
+      <small class="freshness">Queue updated ${esc(fmt(snapshot.updatedAt))} · Environment Sandbox</small>`;
 
     const board = card.querySelector('#scheduler-board');
     const newWrap = card.querySelector('#scheduler-new-board-wrap');
@@ -142,12 +155,16 @@
     }
     const when = new Date(scheduledFor);
     if (Number.isNaN(when.getTime())) { if (resultEl) resultEl.textContent = 'Scheduled time is invalid.'; return; }
-    const approved = window.confirm(`SCHEDULE SANDBOX PIN\n\nBoard: ${boardName}\nTitle: ${title}\nScheduled: ${when.toLocaleString()}\n\nAdd this Pin to the persistent Sandbox queue?`);
+    const approved = window.confirm(`SCHEDULE SANDBOX PIN\n\nBoard: ${boardName}\nTitle: ${title}\nScheduled: ${when.toLocaleString()}\nCadence guard: ${snapshot?.defaultIntervalMinutes || 90} minutes\n\nAdd this Pin to the persistent Sandbox queue?`);
     if (!approved) return;
     busy = true;
     try {
       const result = await scheduler().schedule({ scheduledFor: when.toISOString(), pin: { boardName, title, link, imageUrl, description, altText:title } });
-      if (resultEl) resultEl.textContent = result?.state === 'Scheduled' ? 'Pin scheduled successfully.' : (result?.message || result?.state || 'Scheduling failed.');
+      if (resultEl) {
+        if (result?.state === 'Scheduled') resultEl.textContent = 'Pin scheduled successfully.';
+        else if (result?.state === 'Cadence Conflict') resultEl.textContent = `Cadence conflict: ${result.message}${result.conflictAt ? ` Existing job: ${fmt(result.conflictAt)}.` : ''}`;
+        else resultEl.textContent = result?.message || result?.state || 'Scheduling failed.';
+      }
       await refresh();
     } finally { busy = false; }
   }
