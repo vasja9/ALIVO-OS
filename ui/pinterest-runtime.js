@@ -122,12 +122,12 @@ const pinterestRuntime = (() => {
   }
 
   async function refresh() {
-    if (loading || !window.alivoPinterest?.read) return;
+    if (loading || !window.alivoPinterest?.readLive) return;
     loading = true;
     const card = liveCard();
     if (card && !lastSnapshot) card.innerHTML = '<p>Loading live Pinterest account data…</p>';
     try {
-      render(await window.alivoPinterest.read());
+      render(await window.alivoPinterest.readLive());
     } catch {
       render({ state: 'Unavailable', message: 'Pinterest provider data could not be loaded.' });
     } finally {
