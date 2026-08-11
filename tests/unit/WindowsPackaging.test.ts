@@ -13,7 +13,11 @@ test("production Windows packaging is source-controlled and targets x64 NSIS", (
   assert.match(builderConfiguration, /arch:\s*\n\s*- x64/);
   assert.match(builderConfiguration, /artifactName:.*Setup\.\$\{ext\}/);
   assert.match(builderConfiguration, /oneClick: false/);
-  assert.match(builderConfiguration, /perMachine: false/);
+  assert.match(builderConfiguration, /perMachine: true/);
+  assert.match(builderConfiguration, /executableName: ALIVO OS/);
+  assert.match(builderConfiguration, /createDesktopShortcut: always/);
+  assert.match(builderConfiguration, /createStartMenuShortcut: true/);
+  assert.match(builderConfiguration, /runAfterFinish: false/);
 });
 
 test("installer enforces supported Windows versions", () => {
