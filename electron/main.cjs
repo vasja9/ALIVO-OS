@@ -14,7 +14,12 @@ ipcMain.handle("onboarding:complete",async()=>{const target=onboardingFile(),tem
 app.whenReady().then(async()=>{
  const runtime=createRuntimeHost(app,safeStorage); await runtime.initialize();
  const pinterestData=createPinterestDataCollector(()=>runtime.getPinterestAccessToken());
- const pinterestPublisher=createPinterestPublisher(()=>runtime.getPinterestSandboxAccessToken());
+ // RUNTIME-005D: both environments are wired, but Production WRITE is deliberately hard-locked.
+ const pinterestPublisher=createPinterestPublisher({
+   getSandboxAccessToken:()=>runtime.getPinterestSandboxAccessToken(),
+   getProductionAccessToken:()=>runtime.getPinterestAccessToken(),
+   productionWriteEnabled:false,
+ });
  const pinterestScheduler=createPinterestScheduler(app,pinterestPublisher,{defaultIntervalMinutes:90}); await pinterestScheduler.initialize();
  const initialized=await isInitialized();
  const window=new BrowserWindow({title:"ALIVO OS",width:1280,height:800,minWidth:760,minHeight:600,backgroundColor:"#9c1c31",webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.join(__dirname,"preload.cjs")}});
@@ -22,7 +27,10 @@ app.whenReady().then(async()=>{
  async function openAuth(request){const result=await runtime.openAuthentication(request?.integration);if(result.state!=="Opened")return result;if(authWindow&&!authWindow.isDestroyed()){authWindow.focus();return result;}authWindow=new BrowserWindow({parent:window,modal:true,width:720,height:650,resizable:false,backgroundColor:"#9c1c31",webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.join(__dirname,"auth-preload.cjs")}});authWindow.on("closed",()=>{authWindow=undefined;window.webContents.send("integration:changed");});await authWindow.loadFile(path.join(__dirname,"../ui/auth.html"),{query:{integration:result.integration}});return result;}
  ipcMain.handle("runtime:status",()=>runtime.status()); ipcMain.handle("system:integrations",()=>runtime.integrations()); ipcMain.handle("system:open-authentication",(_e,r)=>openAuth(r)); ipcMain.handle("system:command",(_e,r)=>runtime.systemCommand(r)); ipcMain.handle("settings:read",(_e,r)=>runtime.settingsRead(r)); ipcMain.handle("settings:command",(_e,r)=>runtime.settingsCommand(r)); ipcMain.handle("settings:open-authentication",(_e,r)=>openAuth(r)); ipcMain.handle("auth:verify",(_e,r)=>runtime.verifyAuthentication(r)); ipcMain.handle("auth:pinterest-oauth-info",()=>({redirectUri:REDIRECT_URI}));
  ipcMain.handle("auth:pinterest-oauth",async(_e,request={})=>{const appId=String(request.appId||"").trim(),appSecret=String(request.appSecret||"").trim();if(!appId||!appSecret)return{state:"Configuration Invalid",message:"Pinterest App ID and App secret are required."};const result=await startPinterestOAuth({appId,appSecret,openExternal:(url)=>shell.openExternal(url),complete:(payload)=>runtime.completePinterestOAuth(payload)});window.webContents.send("integration:changed");return result;});
- ipcMain.handle("pinterest:workspace",()=>null); ipcMain.handle("pinterest:data",()=>pinterestData.snapshot()); ipcMain.handle("pinterest:publish-test",async(_e,r)=>{const result=await pinterestPublisher.create(r);if(result?.state==="Published")window.webContents.send("pinterest:data-changed");return result;});
+ ipcMain.handle("pinterest:workspace",()=>null); ipcMain.handle("pinterest:data",()=>pinterestData.snapshot());
+ ipcMain.handle("pinterest:publisher-capabilities",()=>pinterestPublisher.capabilities());
+ ipcMain.handle("pinterest:publish-test",async(_e,r)=>{const result=await pinterestPublisher.create(r,"sandbox");if(result?.state==="Published")window.webContents.send("pinterest:data-changed");return result;});
+ ipcMain.handle("pinterest:publish-production",async(_e,r)=>pinterestPublisher.create(r,"production"));
  ipcMain.handle("pinterest:scheduler:list",()=>pinterestScheduler.list());
  ipcMain.handle("pinterest:scheduler:schedule",async(_e,r)=>{const result=await pinterestScheduler.schedule(r);window.webContents.send("pinterest:scheduler-changed");return result;});
  ipcMain.handle("pinterest:scheduler:cancel",async(_e,id)=>{const result=await pinterestScheduler.cancel(id);window.webContents.send("pinterest:scheduler-changed");return result;});
