@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const { configurePersistentDataPath } = require("./paths.cjs");
 const { createRuntimeHost } = require("./runtime-host.cjs");
 const { startPinterestOAuth, REDIRECT_URI } = require("./pinterest-oauth.cjs");
+const { createPinterestDataCollector } = require("./pinterest-data.cjs");
 
 configurePersistentDataPath(app);
 const onboardingFile = () => path.join(app.getPath("userData"), "state", "onboarding.json");
@@ -13,6 +14,7 @@ ipcMain.handle("onboarding:complete", async () => { const target = onboardingFil
 app.whenReady().then(async () => {
   const runtime = createRuntimeHost(app, safeStorage);
   await runtime.initialize();
+  const pinterestData = createPinterestDataCollector(() => runtime.getPinterestAccessToken());
   const initialized = await isInitialized();
   const window = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
 
@@ -49,12 +51,15 @@ app.whenReady().then(async () => {
     window.webContents.send("integration:changed");
     return result;
   });
+  ipcMain.handle("pinterest:data", () => pinterestData.snapshot());
   ipcMain.on("auth:close", () => { if (authWindow && !authWindow.isDestroyed()) authWindow.close(); });
 
   await window.loadFile(path.join(__dirname, `../ui/${initialized ? "index.html" : "onboarding.html"}`));
   if (initialized) {
     const integrationProjection = await fs.readFile(path.join(__dirname, "../ui/integration-runtime.js"), "utf8");
     await window.webContents.executeJavaScript(integrationProjection);
+    const pinterestProjection = await fs.readFile(path.join(__dirname, "../ui/pinterest-runtime.js"), "utf8");
+    await window.webContents.executeJavaScript(pinterestProjection);
     await window.webContents.insertCSS(`
       [hidden] { display: none !important; }
       :root { --bg: rgb(156, 28, 49); --panel: #7f182b; --panel2: #8f1a30; --line: rgba(255,255,255,.24); --text: #fffaf7; --muted: #f1dfe2; }
