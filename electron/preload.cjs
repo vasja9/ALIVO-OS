@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("alivoSettings", Object.freeze({
 }));
 
 contextBridge.exposeInMainWorld("alivoPinterest", Object.freeze({
-  read: () => ipcRenderer.invoke("pinterest:data"),
+  read: (request) => ipcRenderer.invoke("pinterest:workspace", request),
+  readLive: () => ipcRenderer.invoke("pinterest:data"),
   publishTestPin: (request) => ipcRenderer.invoke("pinterest:publish-test", request),
 }));
