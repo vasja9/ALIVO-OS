@@ -2,6 +2,7 @@
   let snapshot;
   let live;
   let busy = false;
+  let remounting = false;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const fmt = value => value ? new Date(value).toLocaleString() : '—';
@@ -16,7 +17,7 @@
       card.id = 'pinterest-scheduler-runtime';
       card.className = 'card';
       card.style.marginBottom = '16px';
-      overview.appendChild(card);
+      overview.prepend(card);
     }
     return card;
   }
@@ -151,10 +152,22 @@
     } finally { busy = false; }
   }
 
+  const remountObserver = new MutationObserver(() => {
+    const workspace = document.querySelector('#pinterest-workspace');
+    const overview = document.querySelector('#pin-overview');
+    if (!workspace || workspace.hidden || !overview || document.querySelector('#pinterest-scheduler-runtime') || remounting) return;
+    remounting = true;
+    queueMicrotask(() => {
+      try { render(); }
+      finally { remounting = false; }
+    });
+  });
+
   const start = () => {
     refresh();
     scheduler()?.onChanged?.(() => refresh());
-    window.addEventListener('alivo:pinterest:open', () => setTimeout(refresh, 0));
+    window.addEventListener('alivo:pinterest:open', () => setTimeout(refresh, 25));
+    remountObserver.observe(document.body, { childList:true, subtree:true });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once:true }); else start();
 })();
