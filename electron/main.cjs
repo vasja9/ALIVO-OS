@@ -87,6 +87,8 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript(integrationProjection);
     const pinterestProjection = await fs.readFile(path.join(__dirname, "../ui/pinterest-runtime.js"), "utf8");
     await window.webContents.executeJavaScript(pinterestProjection);
+    const pinterestSchedulerProjection = await fs.readFile(path.join(__dirname, "../ui/pinterest-scheduler-runtime.js"), "utf8");
+    await window.webContents.executeJavaScript(pinterestSchedulerProjection);
     await window.webContents.insertCSS(`
       [hidden] { display: none !important; }
       :root { --bg: rgb(156, 28, 49); --panel: #7f182b; --panel2: #8f1a30; --line: rgba(255,255,255,.24); --text: #fffaf7; --muted: #f1dfe2; }
@@ -96,7 +98,7 @@ app.whenReady().then(async () => {
       nav button { color: #f5e8ea !important; }
       nav button.selected { background: rgba(76, 8, 24, .58) !important; color: #fff4d2 !important; }
       .kpi span, .metric span, small, .quiet, .freshness, .sidebar-footer small { color: #f1dfe2 !important; }
-      .chart, .data-table, .view-tabs, .periods, input, select { background: rgba(78, 8, 25, .38) !important; }
+      .chart, .data-table, .view-tabs, .periods, input, select, textarea { background: rgba(78, 8, 25, .38) !important; }
     `);
   }
 
