@@ -3,6 +3,8 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
 const DEFAULT_INTERVAL_MINUTES = 90;
+const MIN_INTERVAL_MINUTES = 30;
+const MAX_INTERVAL_MINUTES = 600;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_MINUTES = 5;
 const STATES = new Set(['Scheduled','Publishing','Retry Scheduled','Published','Failed','Cancelled']);
@@ -14,199 +16,49 @@ function createPinterestScheduler(app, publisher, options = {}) {
   const defaultIntervalMinutes = Number(options.defaultIntervalMinutes || DEFAULT_INTERVAL_MINUTES);
   const maxAttempts = Number(options.maxAttempts || DEFAULT_MAX_ATTEMPTS);
   const retryMinutes = Number(options.retryMinutes || DEFAULT_RETRY_MINUTES);
-  let timer;
-  let running = false;
-  let executionLock = false;
+  let timer; let running = false; let executionLock = false;
 
   async function readState() {
     try {
       const data = JSON.parse(await fs.readFile(queuePath, 'utf8'));
-      return {
-        schemaVersion: 2,
-        enabled: data.enabled === true,
-        environment: 'sandbox',
-        defaultIntervalMinutes: Number(data.defaultIntervalMinutes || defaultIntervalMinutes),
-        maxAttempts: Number(data.maxAttempts || maxAttempts),
-        retryMinutes: Number(data.retryMinutes || retryMinutes),
-        jobs: Array.isArray(data.jobs) ? data.jobs : [],
-        history: Array.isArray(data.history) ? data.history : [],
-        updatedAt: data.updatedAt || null,
-      };
+      return { schemaVersion:2, enabled:data.enabled === true, environment:'sandbox', defaultIntervalMinutes:Number(data.defaultIntervalMinutes || defaultIntervalMinutes), maxAttempts:Number(data.maxAttempts || maxAttempts), retryMinutes:Number(data.retryMinutes || retryMinutes), jobs:Array.isArray(data.jobs)?data.jobs:[], history:Array.isArray(data.history)?data.history:[], updatedAt:data.updatedAt || null };
     } catch (error) {
       if (error?.code === 'ENOENT') return { schemaVersion:2, enabled:false, environment:'sandbox', defaultIntervalMinutes, maxAttempts, retryMinutes, jobs:[], history:[], updatedAt:null };
       throw error;
     }
   }
+  async function writeState(state) { await fs.mkdir(stateDir,{recursive:true}); const next={...state,schemaVersion:2,environment:'sandbox',updatedAt:new Date().toISOString()}; const tmp=`${queuePath}.tmp`; await fs.writeFile(tmp,JSON.stringify(next,null,2),{encoding:'utf8',mode:0o600}); await fs.rename(tmp,queuePath); return next; }
+  function sanitizePin(input={}) { return { boardName:String(input.boardName||'').trim(), title:String(input.title||'').trim(), description:String(input.description||'').trim(), link:String(input.link||'').trim(), imageUrl:String(input.imageUrl||'').trim(), altText:String(input.altText||input.title||'').trim() }; }
+  function isActive(job){ return ['Scheduled','Retry Scheduled','Publishing'].includes(job.status); }
+  function publicationTime(job){ return Date.parse(job.nextAttemptAt || job.scheduledFor); }
 
-  async function writeState(state) {
-    await fs.mkdir(stateDir, { recursive: true });
-    const next = { ...state, schemaVersion:2, environment:'sandbox', updatedAt:new Date().toISOString() };
-    const tmp = `${queuePath}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(next, null, 2), { encoding:'utf8', mode:0o600 });
-    await fs.rename(tmp, queuePath);
-    return next;
+  async function recoverInterrupted(state){ let changed=false; const now=new Date(); for(const job of state.jobs){ if(job.status!=='Publishing') continue; job.status='Retry Scheduled'; job.nextAttemptAt=now.toISOString(); job.recoveredAt=now.toISOString(); job.error='Recovered after ALIVO OS stopped while this job was publishing.'; state.history.unshift({jobId:job.id,status:'Recovered',at:now.toISOString(),message:job.error,title:job.pin?.title}); changed=true; } if(changed){state.history=state.history.slice(0,500); await writeState(state);} return changed; }
+
+  async function schedule(input={}){
+    const pin=sanitizePin(input.pin||input); if(!pin.boardName||!pin.title||!pin.link||!pin.imageUrl) return {state:'Configuration Invalid',message:'Board name, title, destination URL and image URL are required.'};
+    const scheduledFor=new Date(input.scheduledFor||Date.now()); if(Number.isNaN(scheduledFor.getTime())) return {state:'Configuration Invalid',message:'A valid scheduled time is required.'};
+    const state=await readState(); await recoverInterrupted(state); const requested=scheduledFor.getTime(); const spacingMs=Number(state.defaultIntervalMinutes||defaultIntervalMinutes)*60000;
+    const conflict=state.jobs.find(job=>isActive(job)&&Math.abs(publicationTime(job)-requested)<spacingMs); if(conflict) return {state:'Cadence Conflict',message:`Another active Pinterest job is within the ${state.defaultIntervalMinutes}-minute publication interval.`,conflictJobId:conflict.id,conflictAt:conflict.nextAttemptAt||conflict.scheduledFor};
+    const job={id:crypto.randomUUID(),environment:'sandbox',status:'Scheduled',scheduledFor:scheduledFor.toISOString(),nextAttemptAt:scheduledFor.toISOString(),createdAt:new Date().toISOString(),attempts:0,maxAttempts:state.maxAttempts,pin,result:null}; state.jobs.push(job); await writeState(state); return {state:'Scheduled',job};
   }
+  async function cancel(jobId){ const state=await readState(); const job=state.jobs.find(x=>x.id===jobId); if(!job)return{state:'Not Found',message:'Scheduler job was not found.'}; if(job.status==='Published')return{state:'Conflict',message:'Published jobs cannot be cancelled.'}; job.status='Cancelled'; job.cancelledAt=new Date().toISOString(); await writeState(state); return{state:'Cancelled',jobId}; }
+  async function list(){ const state=await readState(); await recoverInterrupted(state); const fresh=await readState(); const counts=fresh.jobs.reduce((acc,job)=>{acc[job.status]=(acc[job.status]||0)+1;return acc;},{}); return{state:'Connected',...fresh,counts,minIntervalMinutes:MIN_INTERVAL_MINUTES,maxIntervalMinutes:MAX_INTERVAL_MINUTES}; }
+  async function setCadence(minutes){ const value=Number(minutes); if(!Number.isInteger(value)||value<MIN_INTERVAL_MINUTES||value>MAX_INTERVAL_MINUTES) return{state:'Configuration Invalid',message:`Publication cadence must be a whole number from ${MIN_INTERVAL_MINUTES} to ${MAX_INTERVAL_MINUTES} minutes.`}; const state=await readState(); state.defaultIntervalMinutes=value; await writeState(state); return{state:'Cadence Updated',defaultIntervalMinutes:value,minIntervalMinutes:MIN_INTERVAL_MINUTES,maxIntervalMinutes:MAX_INTERVAL_MINUTES}; }
 
-  function sanitizePin(input = {}) {
-    return {
-      boardName: String(input.boardName || '').trim(),
-      title: String(input.title || '').trim(),
-      description: String(input.description || '').trim(),
-      link: String(input.link || '').trim(),
-      imageUrl: String(input.imageUrl || '').trim(),
-      altText: String(input.altText || input.title || '').trim(),
-    };
+  async function executeDue(now=new Date()){
+    if(executionLock)return{state:'Busy'}; executionLock=true;
+    try{ const state=await readState(); await recoverInterrupted(state); const current=await readState(); if(!current.enabled)return{state:'Disabled'}; const due=current.jobs.filter(job=>['Scheduled','Retry Scheduled'].includes(job.status)&&publicationTime(job)<=now.getTime()).sort((a,b)=>publicationTime(a)-publicationTime(b)); const results=[];
+      for(const job of due){ job.status='Publishing'; job.lastAttemptAt=new Date().toISOString(); job.attempts=Number(job.attempts||0)+1; await writeState(current); let result; try{result=await publisher.create(job.pin);}catch(error){result={state:'Unavailable',message:error?.message||'Pinterest publisher threw an unexpected error.'};} job.result=result;
+        if(result?.state==='Published'){job.status='Published';job.publishedAt=new Date().toISOString();job.nextAttemptAt=null;job.error=null;current.history.unshift({jobId:job.id,status:'Published',at:job.publishedAt,pinId:result.pinId,boardId:result.boardId,title:job.pin.title,attempts:job.attempts});}
+        else if(job.attempts<Number(job.maxAttempts||current.maxAttempts||maxAttempts)){job.status='Retry Scheduled';job.error=result?.message||result?.state||'Unknown publishing failure';job.nextAttemptAt=new Date(Date.now()+Number(current.retryMinutes||retryMinutes)*60000).toISOString();current.history.unshift({jobId:job.id,status:'Retry Scheduled',at:new Date().toISOString(),message:job.error,nextAttemptAt:job.nextAttemptAt,title:job.pin.title,attempts:job.attempts});}
+        else{job.status='Failed';job.failedAt=new Date().toISOString();job.nextAttemptAt=null;job.error=result?.message||result?.state||'Unknown publishing failure';current.history.unshift({jobId:job.id,status:'Failed',at:job.failedAt,message:job.error,title:job.pin.title,attempts:job.attempts});}
+        current.history=current.history.slice(0,500); await writeState(current); results.push({jobId:job.id,status:job.status,result,attempts:job.attempts,nextAttemptAt:job.nextAttemptAt||null}); }
+      return{state:'Executed',processed:results.length,results};
+    } finally{executionLock=false;}
   }
-
-  function isActive(job) {
-    return job.status === 'Scheduled' || job.status === 'Retry Scheduled' || job.status === 'Publishing';
-  }
-
-  function publicationTime(job) {
-    return Date.parse(job.nextAttemptAt || job.scheduledFor);
-  }
-
-  async function recoverInterrupted(state) {
-    let changed = false;
-    const now = new Date();
-    for (const job of state.jobs) {
-      if (job.status !== 'Publishing') continue;
-      job.status = 'Retry Scheduled';
-      job.nextAttemptAt = now.toISOString();
-      job.recoveredAt = now.toISOString();
-      job.error = 'Recovered after ALIVO OS stopped while this job was publishing.';
-      state.history.unshift({ jobId:job.id, status:'Recovered', at:now.toISOString(), message:job.error, title:job.pin?.title });
-      changed = true;
-    }
-    if (changed) {
-      state.history = state.history.slice(0, 500);
-      await writeState(state);
-    }
-    return changed;
-  }
-
-  async function schedule(input = {}) {
-    const pin = sanitizePin(input.pin || input);
-    if (!pin.boardName || !pin.title || !pin.link || !pin.imageUrl) return { state:'Configuration Invalid', message:'Board name, title, destination URL and image URL are required.' };
-    const scheduledFor = new Date(input.scheduledFor || Date.now());
-    if (Number.isNaN(scheduledFor.getTime())) return { state:'Configuration Invalid', message:'A valid scheduled time is required.' };
-    const state = await readState();
-    await recoverInterrupted(state);
-    const requested = scheduledFor.getTime();
-    const spacingMs = Number(state.defaultIntervalMinutes || defaultIntervalMinutes) * 60000;
-    const conflict = state.jobs.find(job => isActive(job) && Math.abs(publicationTime(job) - requested) < spacingMs);
-    if (conflict) return { state:'Cadence Conflict', message:`Another active Pinterest job is within the ${state.defaultIntervalMinutes}-minute publication interval.`, conflictJobId:conflict.id, conflictAt:conflict.nextAttemptAt || conflict.scheduledFor };
-    const id = crypto.randomUUID();
-    const job = {
-      id,
-      environment:'sandbox',
-      status:'Scheduled',
-      scheduledFor:scheduledFor.toISOString(),
-      nextAttemptAt:scheduledFor.toISOString(),
-      createdAt:new Date().toISOString(),
-      attempts:0,
-      maxAttempts:state.maxAttempts,
-      pin,
-      result:null,
-    };
-    state.jobs.push(job);
-    await writeState(state);
-    return { state:'Scheduled', job };
-  }
-
-  async function cancel(jobId) {
-    const state = await readState();
-    const job = state.jobs.find(x => x.id === jobId);
-    if (!job) return { state:'Not Found', message:'Scheduler job was not found.' };
-    if (job.status === 'Published') return { state:'Conflict', message:'Published jobs cannot be cancelled.' };
-    job.status = 'Cancelled';
-    job.cancelledAt = new Date().toISOString();
-    await writeState(state);
-    return { state:'Cancelled', jobId };
-  }
-
-  async function list() {
-    const state = await readState();
-    await recoverInterrupted(state);
-    const fresh = await readState();
-    const counts = fresh.jobs.reduce((acc, job) => { acc[job.status] = (acc[job.status] || 0) + 1; return acc; }, {});
-    return { state:'Connected', ...fresh, counts };
-  }
-
-  async function executeDue(now = new Date()) {
-    if (executionLock) return { state:'Busy' };
-    executionLock = true;
-    try {
-      const state = await readState();
-      await recoverInterrupted(state);
-      const current = await readState();
-      if (!current.enabled) return { state:'Disabled' };
-      const due = current.jobs
-        .filter(job => (job.status === 'Scheduled' || job.status === 'Retry Scheduled') && publicationTime(job) <= now.getTime())
-        .sort((a,b) => publicationTime(a) - publicationTime(b));
-      const results = [];
-      for (const job of due) {
-        job.status = 'Publishing';
-        job.lastAttemptAt = new Date().toISOString();
-        job.attempts = Number(job.attempts || 0) + 1;
-        await writeState(current);
-        let result;
-        try {
-          result = await publisher.create(job.pin);
-        } catch (error) {
-          result = { state:'Unavailable', message:error?.message || 'Pinterest publisher threw an unexpected error.' };
-        }
-        job.result = result;
-        if (result?.state === 'Published') {
-          job.status = 'Published';
-          job.publishedAt = new Date().toISOString();
-          job.nextAttemptAt = null;
-          job.error = null;
-          current.history.unshift({ jobId:job.id, status:'Published', at:job.publishedAt, pinId:result.pinId, boardId:result.boardId, title:job.pin.title, attempts:job.attempts });
-        } else if (job.attempts < Number(job.maxAttempts || current.maxAttempts || maxAttempts)) {
-          job.status = 'Retry Scheduled';
-          job.error = result?.message || result?.state || 'Unknown publishing failure';
-          job.nextAttemptAt = new Date(Date.now() + Number(current.retryMinutes || retryMinutes) * 60000).toISOString();
-          current.history.unshift({ jobId:job.id, status:'Retry Scheduled', at:new Date().toISOString(), message:job.error, nextAttemptAt:job.nextAttemptAt, title:job.pin.title, attempts:job.attempts });
-        } else {
-          job.status = 'Failed';
-          job.failedAt = new Date().toISOString();
-          job.nextAttemptAt = null;
-          job.error = result?.message || result?.state || 'Unknown publishing failure';
-          current.history.unshift({ jobId:job.id, status:'Failed', at:job.failedAt, message:job.error, title:job.pin.title, attempts:job.attempts });
-        }
-        current.history = current.history.slice(0, 500);
-        await writeState(current);
-        results.push({ jobId:job.id, status:job.status, result, attempts:job.attempts, nextAttemptAt:job.nextAttemptAt || null });
-      }
-      return { state:'Executed', processed:results.length, results };
-    } finally {
-      executionLock = false;
-    }
-  }
-
-  async function setEnabled(enabled) {
-    const state = await readState();
-    state.enabled = enabled === true;
-    await writeState(state);
-    return { state:state.enabled ? 'Enabled' : 'Disabled', environment:'sandbox' };
-  }
-
-  async function initialize() {
-    if (running) return;
-    running = true;
-    const state = await readState();
-    await recoverInterrupted(state);
-    timer = setInterval(() => { executeDue().catch(() => {}); }, tickMs);
-    timer.unref?.();
-  }
-
-  async function shutdown() {
-    if (timer) clearInterval(timer);
-    running = false;
-  }
-
-  return Object.freeze({ initialize, shutdown, schedule, cancel, list, executeDue, setEnabled });
+  async function setEnabled(enabled){const state=await readState();state.enabled=enabled===true;await writeState(state);return{state:state.enabled?'Enabled':'Disabled',environment:'sandbox'};}
+  async function initialize(){if(running)return;running=true;const state=await readState();await recoverInterrupted(state);timer=setInterval(()=>{executeDue().catch(()=>{});},tickMs);timer.unref?.();}
+  async function shutdown(){if(timer)clearInterval(timer);running=false;}
+  return Object.freeze({initialize,shutdown,schedule,cancel,list,executeDue,setEnabled,setCadence});
 }
-
-module.exports = { createPinterestScheduler, DEFAULT_INTERVAL_MINUTES, DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_MINUTES, STATES };
+module.exports={createPinterestScheduler,DEFAULT_INTERVAL_MINUTES,MIN_INTERVAL_MINUTES,MAX_INTERVAL_MINUTES,DEFAULT_MAX_ATTEMPTS,DEFAULT_RETRY_MINUTES,STATES};
