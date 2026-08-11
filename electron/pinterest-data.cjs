@@ -1,4 +1,5 @@
 const API_ROOT = "https://api.pinterest.com/v5";
+const MAX_PAGES = 100;
 
 function classify(status) {
   if (status === 401) return "Authentication Required";
@@ -39,9 +40,24 @@ async function apiGet(path, accessToken) {
   };
 }
 
-async function listPage(path, accessToken, pageSize = 50) {
-  const separator = path.includes("?") ? "&" : "?";
-  return apiGet(`${path}${separator}page_size=${pageSize}`, accessToken);
+async function listAll(path, accessToken, pageSize = 100) {
+  const items = [];
+  let bookmark;
+  let pages = 0;
+  let rateLimit;
+
+  do {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (bookmark) params.set("bookmark", bookmark);
+    const separator = path.includes("?") ? "&" : "?";
+    const result = await apiGet(`${path}${separator}${params.toString()}`, accessToken);
+    pages += 1;
+    rateLimit = result.rateLimit || rateLimit;
+    if (Array.isArray(result.payload?.items)) items.push(...result.payload.items);
+    bookmark = result.payload?.bookmark || undefined;
+  } while (bookmark && pages < MAX_PAGES);
+
+  return { items, pages, complete: !bookmark, rateLimit };
 }
 
 function safeBoard(board = {}) {
@@ -92,12 +108,12 @@ function createPinterestDataCollector(getAccessToken) {
 
       const [accountResult, boardsResult, pinsResult] = await Promise.all([
         apiGet("/user_account", accessToken),
-        listPage("/boards", accessToken),
-        listPage("/pins", accessToken),
+        listAll("/boards", accessToken),
+        listAll("/pins", accessToken),
       ]);
 
-      const boards = Array.isArray(boardsResult.payload?.items) ? boardsResult.payload.items.map(safeBoard) : [];
-      const pins = Array.isArray(pinsResult.payload?.items) ? pinsResult.payload.items.map(safePin) : [];
+      const boards = boardsResult.items.map(safeBoard);
+      const pins = pinsResult.items.map(safePin);
 
       return {
         state: "Connected",
@@ -106,7 +122,8 @@ function createPinterestDataCollector(getAccessToken) {
         boards,
         pins,
         counts: { boards: boards.length, pins: pins.length },
-        partial: Boolean(boardsResult.payload?.bookmark || pinsResult.payload?.bookmark),
+        pages: { boards: boardsResult.pages, pins: pinsResult.pages },
+        partial: !(boardsResult.complete && pinsResult.complete),
         rateLimit: pinsResult.rateLimit || boardsResult.rateLimit || accountResult.rateLimit,
       };
     } catch (error) {
