@@ -25,18 +25,26 @@ const pinterestRuntime = (() => {
   function renderPublisher() {
     const card = publishCard(); if (!card) return;
     const boards = (lastSnapshot.boards || []).filter(board => String(board.privacy || '').toUpperCase() === 'PUBLIC');
-    const options = boards.map(board => `<option value="${esc(board.id)}" data-name="${esc(board.name || board.id)}">${esc(board.name || board.id)}</option>`).join('');
+    const options = boards.map(board => `<option value="existing:${esc(board.id)}" data-name="${esc(board.name || board.id)}">${esc(board.name || board.id)}</option>`).join('');
     card.innerHTML = `
       <div class="card-head"><div><p class="eyebrow">Controlled write test · Pinterest Sandbox</p><h2>Publish one Sandbox test Pin</h2></div><span class="status-chip">MANUAL ONLY</span></div>
-      <p class="quiet">Trial access writes are sent only to api-sandbox.pinterest.com. ALIVO OS mirrors the selected production board name into Sandbox if needed. Nothing is published until final confirmation.</p>
+      <p class="quiet">Trial access writes are sent only to api-sandbox.pinterest.com. Choose an existing production board name to mirror into Sandbox, or create a new Sandbox board. Nothing is published until final confirmation.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
-        <label>Board name<select id="pin-test-board" style="width:100%;margin-top:6px"><option value="">Select public board name…</option>${options}</select></label>
+        <label>Board name<select id="pin-test-board" style="width:100%;margin-top:6px"><option value="">Select board…</option>${options}<option value="__create_new__">＋ Create new Sandbox board…</option></select></label>
+        <label id="pin-test-new-board-wrap" hidden>New Sandbox board name<input id="pin-test-new-board" maxlength="180" placeholder="Enter new board name" style="width:100%;margin-top:6px" /></label>
         <label>Title<input id="pin-test-title" maxlength="100" placeholder="ALIVO OS Sandbox publishing test" style="width:100%;margin-top:6px" /></label>
         <label style="grid-column:1/-1">Destination URL<input id="pin-test-link" type="url" placeholder="https://alivo.eu/..." style="width:100%;margin-top:6px" /></label>
         <label style="grid-column:1/-1">Public image URL<input id="pin-test-image" type="url" placeholder="https://alivo.eu/.../image.jpg" style="width:100%;margin-top:6px" /></label>
         <label style="grid-column:1/-1">Description<textarea id="pin-test-description" maxlength="500" rows="3" placeholder="Controlled ALIVO OS Pinterest Sandbox publishing test." style="width:100%;margin-top:6px"></textarea></label>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:14px"><button id="pin-test-publish" class="secondary">Review & Publish Sandbox Pin</button><span id="pin-test-result" class="quiet"></span></div>`;
+    const boardSelect = card.querySelector('#pin-test-board');
+    const newBoardWrap = card.querySelector('#pin-test-new-board-wrap');
+    boardSelect?.addEventListener('change', () => {
+      const creating = boardSelect.value === '__create_new__';
+      if (newBoardWrap) newBoardWrap.hidden = !creating;
+      if (creating) card.querySelector('#pin-test-new-board')?.focus();
+    });
     card.querySelector('#pin-test-publish')?.addEventListener('click', publishTestPin);
   }
 
@@ -44,15 +52,17 @@ const pinterestRuntime = (() => {
     if (publishing || !window.alivoPinterest?.publishTestPin) return;
     const card = publishCard();
     const boardSelect = card?.querySelector('#pin-test-board');
-    const boardId = boardSelect?.value?.trim();
-    const boardName = boardSelect?.selectedOptions?.[0]?.dataset?.name || '';
+    const createNewBoard = boardSelect?.value === '__create_new__';
+    const boardName = createNewBoard
+      ? card?.querySelector('#pin-test-new-board')?.value?.trim()
+      : boardSelect?.selectedOptions?.[0]?.dataset?.name || '';
     const title = card?.querySelector('#pin-test-title')?.value?.trim();
     const link = card?.querySelector('#pin-test-link')?.value?.trim();
     const imageUrl = card?.querySelector('#pin-test-image')?.value?.trim();
     const description = card?.querySelector('#pin-test-description')?.value?.trim();
     const result = card?.querySelector('#pin-test-result');
-    if (!boardId || !boardName || !title || !link || !imageUrl) { if (result) result.textContent = 'Board, title, destination URL and image URL are required.'; return; }
-    const approved = window.confirm(`FINAL SANDBOX WRITE CONFIRMATION\n\nEnvironment: Pinterest Sandbox\nBoard name: ${boardName}\nTitle: ${title}\nDestination: ${link}\nImage: ${imageUrl}\n\nCreate exactly ONE Sandbox Pin now?`);
+    if (!boardName || !title || !link || !imageUrl) { if (result) result.textContent = 'Board name, title, destination URL and image URL are required.'; return; }
+    const approved = window.confirm(`FINAL SANDBOX WRITE CONFIRMATION\n\nEnvironment: Pinterest Sandbox\nBoard: ${boardName}${createNewBoard ? ' (create if missing)' : ''}\nTitle: ${title}\nDestination: ${link}\nImage: ${imageUrl}\n\nCreate exactly ONE Sandbox Pin now?`);
     if (!approved) { if (result) result.textContent = 'Publishing cancelled. Nothing was sent to Pinterest Sandbox.'; return; }
     publishing = true; if (result) result.textContent = 'Publishing one Sandbox Pin…';
     try {
