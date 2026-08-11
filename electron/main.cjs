@@ -53,6 +53,7 @@ app.whenReady().then(async () => {
     window.webContents.send("integration:changed");
     return result;
   });
+  ipcMain.handle("pinterest:workspace", () => null);
   ipcMain.handle("pinterest:data", () => pinterestData.snapshot());
   ipcMain.handle("pinterest:publish-test", async (_event, request) => {
     const result = await pinterestPublisher.create(request);
