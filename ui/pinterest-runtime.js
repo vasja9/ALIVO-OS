@@ -32,6 +32,8 @@ const pinterestRuntime = (() => {
     const pins = Array.isArray(snapshot.pins) ? snapshot.pins : [];
     const boardRows = boards.slice(0, 8).map(board => `<tr><td>${esc(board.name || 'Untitled board')}</td><td>${esc(board.pinCount ?? '—')}</td><td>${esc(board.privacy || '—')}</td></tr>`).join('');
     const pinRows = pins.slice(0, 8).map(pin => `<tr><td>${esc(pin.title || '(untitled)')}</td><td>${esc(pin.boardId || '—')}</td><td>${esc(fmt(pin.createdAt))}</td></tr>`).join('');
+    const pageInfo = snapshot.pages ? ` · API pages: Boards ${esc(snapshot.pages.boards ?? '—')}, Pins ${esc(snapshot.pages.pins ?? '—')}` : '';
+    const completeness = snapshot.partial ? ' · Partial snapshot' : ' · Complete paginated snapshot';
     card.innerHTML = `
       <div class="card-head"><div><p class="eyebrow">Live Pinterest API</p><h2>${esc(account.businessName || account.username || 'Pinterest account')}</h2></div><button id="pinterest-live-refresh" class="secondary">↻ Refresh live data</button></div>
       <div class="metric-strip">
@@ -40,7 +42,7 @@ const pinterestRuntime = (() => {
         <div class="metric"><span>Followers</span><strong>${esc(account.followerCount ?? 'Unavailable')}</strong></div>
         <div class="metric"><span>Monthly views</span><strong>${esc(account.monthlyViews ?? 'Unavailable')}</strong></div>
       </div>
-      <small class="freshness">Live provider snapshot · ${esc(fmt(snapshot.collectedAt))}${snapshot.partial ? ' · First API page only' : ''}</small>
+      <small class="freshness">Live provider snapshot · ${esc(fmt(snapshot.collectedAt))}${completeness}${pageInfo}</small>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
         <div><h3>Boards</h3><div class="data-table"><table><thead><tr><th>Name</th><th>Pins</th><th>Privacy</th></tr></thead><tbody>${boardRows || '<tr><td colspan="3">No boards returned.</td></tr>'}</tbody></table></div></div>
         <div><h3>Recent Pins</h3><div class="data-table"><table><thead><tr><th>Title</th><th>Board ID</th><th>Created</th></tr></thead><tbody>${pinRows || '<tr><td colspan="3">No Pins returned.</td></tr>'}</tbody></table></div></div>
