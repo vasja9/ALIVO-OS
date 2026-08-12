@@ -4,127 +4,33 @@ const fs = require('node:fs/promises');
 const API_ROOT = 'https://api.pinterest.com/v5';
 const RETENTION_DAYS = 365;
 
-function classify(status) {
-  if (status === 401) return 'Authentication Required';
-  if (status === 403) return 'Permission Denied';
-  if (status === 429) return 'Rate Limited';
-  return status >= 500 ? 'Unavailable' : 'Provider Error';
-}
-
-async function timedFetch(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try { return await fetch(url, { ...options, signal: controller.signal }); }
-  finally { clearTimeout(timeout); }
-}
-
-// Provider keys are normalized before matching so ALIVO OS is resilient to
-// casing and harmless separator changes such as impression / IMPRESSION,
-// outbound_click / OUTBOUND-CLICK / OutboundClick.
-function normalizeKey(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function indexedObject(source) {
-  if (!source || typeof source !== 'object' || Array.isArray(source)) return new Map();
-  return new Map(Object.entries(source).map(([key, value]) => [normalizeKey(key), value]));
-}
-
-function valueByAliases(source, aliases) {
-  const index = indexedObject(source);
-  for (const alias of aliases) {
-    const value = index.get(normalizeKey(alias));
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
-function metricValue(metrics, names) {
-  const value = valueByAliases(metrics, names);
-  return Number.isFinite(Number(value)) ? Number(value) : 0;
-}
-
-function metricContainer(metrics, names) {
-  const value = valueByAliases(metrics, names);
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
-}
-
+function classify(status) { if (status === 401) return 'Authentication Required'; if (status === 403) return 'Permission Denied'; if (status === 429) return 'Rate Limited'; return status >= 500 ? 'Unavailable' : 'Provider Error'; }
+async function timedFetch(url, options = {}) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15000); try { return await fetch(url, { ...options, signal: controller.signal }); } finally { clearTimeout(timeout); } }
+function normalizeKey(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function indexedObject(source) { if (!source || typeof source !== 'object' || Array.isArray(source)) return new Map(); return new Map(Object.entries(source).map(([key, value]) => [normalizeKey(key), value])); }
+function valueByAliases(source, aliases) { const index = indexedObject(source); for (const alias of aliases) { const value = index.get(normalizeKey(alias)); if (value !== undefined) return value; } return undefined; }
+function metricValue(metrics, names) { const value = valueByAliases(metrics, names); return Number.isFinite(Number(value)) ? Number(value) : 0; }
+function metricContainer(metrics, names) { const value = valueByAliases(metrics, names); return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined; }
 function normalizePinMetrics(pin = {}) {
   const metrics = metricContainer(pin, ['pin_metrics','pinMetrics','pin_stats','pinStats']) || {};
   const lifetime = metricContainer(metrics, ['lifetime_metrics','lifetimeMetrics','all_time','allTime','lifetime']) || metrics;
   const ninety = metricContainer(metrics, ['90d','90_day','90day','ninety_day','ninetyDay','last_90_days','last90Days']) || {};
-
-  const pick = source => ({
-    impressions: metricValue(source, ['impression','impressions','impression_1']),
-    saves: metricValue(source, ['save','saves','save_1']),
-    pinClicks: metricValue(source, ['pin_click','pinClicks','pin_clicks','click']),
-    outboundClicks: metricValue(source, ['outbound_click','outboundClicks','outbound_clicks','clickthrough','click_through']),
-    engagements: metricValue(source, ['engagement','engagements','engagement_1']),
-  });
-
+  const pick = source => ({ impressions: metricValue(source, ['impression','impressions','impression_1']), saves: metricValue(source, ['save','saves','save_1']), pinClicks: metricValue(source, ['pin_click','pinClicks','pin_clicks','click']), outboundClicks: metricValue(source, ['outbound_click','outboundClicks','outbound_clicks','clickthrough','click_through']), engagements: metricValue(source, ['engagement','engagements','engagement_1']) });
   return { lifetime: pick(lifetime), ninetyDay: pick(ninety) };
 }
-
+function summarize(pins) {
+  const metricNames=['impressions','engagements','pinClicks','outboundClicks','saves'];
+  const totals=Object.fromEntries(metricNames.map(k=>[k,0])); const nonZero=Object.fromEntries(metricNames.map(k=>[k,0])); let pinsWithAnyMetric=0;
+  for(const pin of pins){const m=pin.metrics?.lifetime||{};let any=false;for(const key of metricNames){const value=Number(m[key]||0);totals[key]+=value;if(value>0){nonZero[key]++;any=true;}}if(any)pinsWithAnyMetric++;}
+  return {totals,nonZero,pinsWithAnyMetric,coveragePercent:pins.length?Math.round(pinsWithAnyMetric/pins.length*100):0};
+}
 function createPinterestPerformanceCollector(app, getAccessToken) {
-  const stateDir = path.join(app.getPath('userData'), 'state');
-  const historyPath = path.join(stateDir, 'pinterest-performance.json');
-
-  async function readHistory() {
-    try {
-      const parsed = JSON.parse(await fs.readFile(historyPath, 'utf8'));
-      return { schemaVersion:1, snapshots:Array.isArray(parsed.snapshots)?parsed.snapshots:[], updatedAt:parsed.updatedAt||null };
-    } catch (error) {
-      if (error?.code === 'ENOENT') return { schemaVersion:1, snapshots:[], updatedAt:null };
-      throw error;
-    }
-  }
-
-  async function writeHistory(history) {
-    await fs.mkdir(stateDir,{recursive:true});
-    const cutoff=Date.now()-RETENTION_DAYS*86400000;
-    const next={schemaVersion:1,snapshots:history.snapshots.filter(s=>Date.parse(s.collectedAt)>=cutoff),updatedAt:new Date().toISOString()};
-    const tmp=`${historyPath}.tmp`;
-    await fs.writeFile(tmp,JSON.stringify(next,null,2),{encoding:'utf8',mode:0o600});
-    await fs.rename(tmp,historyPath);
-    return next;
-  }
-
-  async function fetchPinsWithMetrics(accessToken) {
-    const items=[]; let bookmark; let pages=0; let rateLimit;
-    do {
-      const params=new URLSearchParams({page_size:'100',pin_metrics:'true'});
-      if(bookmark)params.set('bookmark',bookmark);
-      const response=await timedFetch(`${API_ROOT}/pins?${params}`,{headers:{Authorization:`Bearer ${accessToken}`,Accept:'application/json'}});
-      let payload; try{payload=await response.json();}catch{payload={};}
-      if(!response.ok){const error=new Error(`Pinterest analytics request returned HTTP ${response.status}.`);error.state=classify(response.status);error.statusCode=response.status;throw error;}
-      pages+=1; if(Array.isArray(payload.items))items.push(...payload.items); bookmark=payload.bookmark||undefined;
-      rateLimit={limit:response.headers.get('x-ratelimit-limit')||undefined,remaining:response.headers.get('x-ratelimit-remaining')||undefined,reset:response.headers.get('x-ratelimit-reset')||undefined};
-    } while(bookmark&&pages<100);
-    return {items,pages,complete:!bookmark,rateLimit};
-  }
-
-  async function collect() {
-    try {
-      const accessToken=await getAccessToken();
-      if(!accessToken)return{state:'Authentication Required',message:'Pinterest does not have a usable production read token.'};
-      const result=await fetchPinsWithMetrics(accessToken);
-      const collectedAt=new Date().toISOString();
-      const pins=result.items.map(pin=>({id:pin.id,title:pin.title||'',boardId:pin.board_id,createdAt:pin.created_at,link:pin.link||'',metrics:normalizePinMetrics(pin)}));
-      const snapshot={collectedAt,pinCount:pins.length,pages:result.pages,complete:result.complete,pins};
-      const history=await readHistory(); history.snapshots.push(snapshot); const stored=await writeHistory(history);
-      return{state:'Collected',collectedAt,pinCount:pins.length,pages:result.pages,complete:result.complete,historySnapshots:stored.snapshots.length,retentionDays:RETENTION_DAYS,rateLimit:result.rateLimit,pins};
-    } catch(error) {
-      return{state:error?.state||'Unavailable',statusCode:error?.statusCode,message:error?.name==='AbortError'?'Pinterest performance request timed out.':(error?.message||'Pinterest performance could not be collected.')};
-    }
-  }
-
-  async function history() {
-    const stored=await readHistory();
-    const latest=stored.snapshots.at(-1)||null;
-    return{state:'Connected',snapshotCount:stored.snapshots.length,updatedAt:stored.updatedAt,latest,retentionDays:RETENTION_DAYS};
-  }
-
+  const stateDir = path.join(app.getPath('userData'), 'state'); const historyPath = path.join(stateDir, 'pinterest-performance.json');
+  async function readHistory() { try { const parsed = JSON.parse(await fs.readFile(historyPath, 'utf8')); return { schemaVersion:1, snapshots:Array.isArray(parsed.snapshots)?parsed.snapshots:[], updatedAt:parsed.updatedAt||null }; } catch (error) { if (error?.code === 'ENOENT') return { schemaVersion:1, snapshots:[], updatedAt:null }; throw error; } }
+  async function writeHistory(history) { await fs.mkdir(stateDir,{recursive:true}); const cutoff=Date.now()-RETENTION_DAYS*86400000; const next={schemaVersion:1,snapshots:history.snapshots.filter(s=>Date.parse(s.collectedAt)>=cutoff),updatedAt:new Date().toISOString()}; const tmp=`${historyPath}.tmp`; await fs.writeFile(tmp,JSON.stringify(next,null,2),{encoding:'utf8',mode:0o600}); await fs.rename(tmp,historyPath); return next; }
+  async function fetchPinsWithMetrics(accessToken) { const items=[]; let bookmark; let pages=0; let rateLimit; do { const params=new URLSearchParams({page_size:'100',pin_metrics:'true'}); if(bookmark)params.set('bookmark',bookmark); const response=await timedFetch(`${API_ROOT}/pins?${params}`,{headers:{Authorization:`Bearer ${accessToken}`,Accept:'application/json'}}); let payload; try{payload=await response.json();}catch{payload={};} if(!response.ok){const error=new Error(`Pinterest analytics request returned HTTP ${response.status}.`);error.state=classify(response.status);error.statusCode=response.status;throw error;} pages+=1;if(Array.isArray(payload.items))items.push(...payload.items);bookmark=payload.bookmark||undefined;rateLimit={limit:response.headers.get('x-ratelimit-limit')||undefined,remaining:response.headers.get('x-ratelimit-remaining')||undefined,reset:response.headers.get('x-ratelimit-reset')||undefined}; } while(bookmark&&pages<100); return {items,pages,complete:!bookmark,rateLimit}; }
+  async function collect() { try { const accessToken=await getAccessToken(); if(!accessToken)return{state:'Authentication Required',message:'Pinterest does not have a usable production read token.'}; const result=await fetchPinsWithMetrics(accessToken); const collectedAt=new Date().toISOString(); const pins=result.items.map(pin=>({id:pin.id,title:pin.title||'',boardId:pin.board_id,createdAt:pin.created_at,link:pin.link||'',metrics:normalizePinMetrics(pin)})); const diagnostics=summarize(pins); const snapshot={collectedAt,pinCount:pins.length,pages:result.pages,complete:result.complete,diagnostics,pins}; const history=await readHistory();history.snapshots.push(snapshot);const stored=await writeHistory(history);return{state:'Collected',collectedAt,pinCount:pins.length,pages:result.pages,complete:result.complete,historySnapshots:stored.snapshots.length,retentionDays:RETENTION_DAYS,rateLimit:result.rateLimit,diagnostics,pins}; } catch(error) { return{state:error?.state||'Unavailable',statusCode:error?.statusCode,message:error?.name==='AbortError'?'Pinterest performance request timed out.':(error?.message||'Pinterest performance could not be collected.')}; } }
+  async function history() { const stored=await readHistory(); const latest=stored.snapshots.at(-1)||null; return{state:'Connected',snapshotCount:stored.snapshots.length,updatedAt:stored.updatedAt,latest,retentionDays:RETENTION_DAYS}; }
   return Object.freeze({collect,history});
 }
-
-module.exports={createPinterestPerformanceCollector,normalizePinMetrics,normalizeKey,RETENTION_DAYS};
+module.exports={createPinterestPerformanceCollector,normalizePinMetrics,normalizeKey,summarize,RETENTION_DAYS};
