@@ -18,25 +18,50 @@ async function timedFetch(url, options = {}) {
   finally { clearTimeout(timeout); }
 }
 
-function metricValue(metrics, names) {
-  for (const name of names) {
-    const value = metrics?.[name];
-    if (Number.isFinite(Number(value))) return Number(value);
+// Provider keys are normalized before matching so ALIVO OS is resilient to
+// casing and harmless separator changes such as impression / IMPRESSION,
+// outbound_click / OUTBOUND-CLICK / OutboundClick.
+function normalizeKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function indexedObject(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return new Map();
+  return new Map(Object.entries(source).map(([key, value]) => [normalizeKey(key), value]));
+}
+
+function valueByAliases(source, aliases) {
+  const index = indexedObject(source);
+  for (const alias of aliases) {
+    const value = index.get(normalizeKey(alias));
+    if (value !== undefined) return value;
   }
-  return 0;
+  return undefined;
+}
+
+function metricValue(metrics, names) {
+  const value = valueByAliases(metrics, names);
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function metricContainer(metrics, names) {
+  const value = valueByAliases(metrics, names);
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined;
 }
 
 function normalizePinMetrics(pin = {}) {
-  const metrics = pin.pin_metrics || pin.pin_stats || {};
-  const lifetime = metrics.lifetime_metrics || metrics.all_time || metrics.lifetime || metrics;
-  const ninety = metrics['90d'] || metrics.ninety_day || metrics.last_90_days || {};
+  const metrics = metricContainer(pin, ['pin_metrics','pinMetrics','pin_stats','pinStats']) || {};
+  const lifetime = metricContainer(metrics, ['lifetime_metrics','lifetimeMetrics','all_time','allTime','lifetime']) || metrics;
+  const ninety = metricContainer(metrics, ['90d','90_day','90day','ninety_day','ninetyDay','last_90_days','last90Days']) || {};
+
   const pick = source => ({
-    impressions: metricValue(source, ['IMPRESSION','IMPRESSION_1','impressions']),
-    saves: metricValue(source, ['SAVE','SAVE_1','saves']),
-    pinClicks: metricValue(source, ['PIN_CLICK','CLICKTHROUGH','pin_clicks']),
-    outboundClicks: metricValue(source, ['OUTBOUND_CLICK','OUTBOUND_CLICK_1','outbound_clicks']),
-    engagements: metricValue(source, ['ENGAGEMENT','ENGAGEMENT_1','engagements']),
+    impressions: metricValue(source, ['impression','impressions','impression_1']),
+    saves: metricValue(source, ['save','saves','save_1']),
+    pinClicks: metricValue(source, ['pin_click','pinClicks','pin_clicks','click']),
+    outboundClicks: metricValue(source, ['outbound_click','outboundClicks','outbound_clicks','clickthrough','click_through']),
+    engagements: metricValue(source, ['engagement','engagements','engagement_1']),
   });
+
   return { lifetime: pick(lifetime), ninetyDay: pick(ninety) };
 }
 
@@ -102,4 +127,4 @@ function createPinterestPerformanceCollector(app, getAccessToken) {
   return Object.freeze({collect,history});
 }
 
-module.exports={createPinterestPerformanceCollector,normalizePinMetrics,RETENTION_DAYS};
+module.exports={createPinterestPerformanceCollector,normalizePinMetrics,normalizeKey,RETENTION_DAYS};
