@@ -5,7 +5,17 @@ const FILE='pinterest-production-trial.json';
 const MAX_PINS_PER_APPROVAL=1;
 const APPROVAL_TTL_MINUTES=30;
 async function readJson(file,fallback){try{return JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e?.code==='ENOENT')return fallback;throw e;}}
-async function writeJson(file,value){await fs.mkdir(path.dirname(file),{recursive:true});const tmp=`${file}.tmp`;await fs.writeFile(tmp,JSON.stringify(value,null,2),{encoding:'utf8',mode:0o600});await fs.rename(tmp,file);}
+async function writeJson(file,value){
+  await fs.mkdir(path.dirname(file),{recursive:true});
+  const tmp=`${file}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmp,JSON.stringify(value,null,2),{encoding:'utf8',mode:0o600});
+  try{await fs.rename(tmp,file);}catch(e){
+    if(process.platform==='win32'&&['EEXIST','EPERM','EACCES'].includes(e?.code)){
+      await fs.rm(file,{force:true});
+      await fs.rename(tmp,file);
+    }else{try{await fs.rm(tmp,{force:true});}catch{}throw e;}
+  }
+}
 function createPinterestProductionTrial(app,publisher){
   const file=path.join(app.getPath('userData'),'state',FILE);
   async function state(){const s=await readJson(file,{schemaVersion:1,approval:null,audit:[]});const approval=s.approval,now=Date.now(),expires=approval?Date.parse(approval.expiresAt):0,active=Boolean(approval&&approval.status==='APPROVED'&&expires>now&&Number(approval.remaining||0)>0);return{state:'Connected',mode:active?'APPROVED':'LOCKED',active,remaining:active?Number(approval.remaining||0):0,expiresAt:active?approval.expiresAt:null,maxPinsPerApproval:MAX_PINS_PER_APPROVAL,approvalTtlMinutes:APPROVAL_TTL_MINUTES,schedulerControl:false,automaticApproval:false,auditCount:Array.isArray(s.audit)?s.audit.length:0};}
