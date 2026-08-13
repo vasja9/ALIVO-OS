@@ -67,7 +67,18 @@ async function ensureBoard(environment, accessToken, boardName) {
   return { board: created.payload, created: true };
 }
 
+function createPublicationCapture() {
+  try {
+    const electron = require("electron");
+    const app = electron?.app;
+    if (!app || typeof app.getPath !== "function") return null;
+    const { createPinterestPublicationResults } = require("./pinterest-publication-results.cjs");
+    return createPinterestPublicationResults(app);
+  } catch { return null; }
+}
+
 function createPinterestPublisher({ getSandboxAccessToken, getProductionAccessToken, productionWriteEnabled = false } = {}) {
+  const publicationResults = createPublicationCapture();
   async function create(input = {}, requestedEnvironment = "sandbox") {
     const environment = String(requestedEnvironment || "sandbox").toLowerCase();
     if (!API_ROOTS[environment]) return { state: "Configuration Invalid", message: "Pinterest publishing environment must be sandbox or production." };
@@ -96,7 +107,7 @@ function createPinterestPublisher({ getSandboxAccessToken, getProductionAccessTo
       const created = await api(environment, accessToken, "/pins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (created.error) return created.error;
       const payload = created.payload;
-      return {
+      const result = {
         state: "Published",
         environment: environment === "production" ? "Production" : "Sandbox",
         pinId: payload?.id,
@@ -109,6 +120,8 @@ function createPinterestPublisher({ getSandboxAccessToken, getProductionAccessTo
         link: payload?.link || v.link,
         message: `Pinterest ${environment === "production" ? "Production" : "Sandbox"} confirmed Pin creation.`,
       };
+      if (publicationResults) await publicationResults.capture(result, input, environment === "sandbox" ? "sandbox-publisher" : "production-publisher");
+      return result;
     } catch (error) {
       return { state: "Unavailable", message: error?.name === "AbortError" ? `Pinterest ${environment} Pin creation timed out.` : `Pinterest ${environment} Pin could not be created.` };
     }
