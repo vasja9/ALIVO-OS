@@ -21,7 +21,7 @@ app.whenReady().then(async()=>{
  const pinterestAccountAnalytics=createPinterestAccountAnalyticsCollector(app,()=>runtime.getPinterestAccessToken());
  const pinterestLearning=createPinterestPerformanceLearning(app);
  const pinterestPublisher=createPinterestPublisher({getSandboxAccessToken:()=>runtime.getPinterestSandboxAccessToken(),getProductionAccessToken:()=>runtime.getPinterestAccessToken(),productionWriteEnabled:false});
- const pinterestScheduler=createPinterestScheduler(app,pinterestPublisher,{defaultIntervalMinutes:90}); await pinterestScheduler.initialize();
+ const pinterestScheduler=createPinterestScheduler(app,pinterestPublisher,{defaultIntervalMinutes:90,learningProvider:()=>pinterestLearning.model()}); await pinterestScheduler.initialize();
  const initialized=await isInitialized();
  const window=new BrowserWindow({title:"ALIVO OS",width:1280,height:800,minWidth:760,minHeight:600,backgroundColor:"#9c1c31",webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.join(__dirname,"preload.cjs")}});
  let authWindow;
