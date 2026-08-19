@@ -1,0 +1,35 @@
+modules = ["nodejs-24", "python-base-3.13"]
+
+[nix]
+channel = "stable-25_05"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[postMerge]
+path = "scripts/post-merge-setup.sh"
+timeoutMs = 180000
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "pinterest-dom"
+
+[[workflows.workflow]]
+name = "pinterest-dom"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run test:pinterest:dom"
+
+[workflows.workflow.metadata]
+isValidation = true

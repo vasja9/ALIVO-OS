@@ -11,6 +11,9 @@ assert.match(builderConfiguration, /target: nsis/);
 assert.match(builderConfiguration, /output: release/);
 assert.match(builderConfiguration, /include: installer\/windows-installer\.nsh/);
 assert.match(builderConfiguration, /artifactName:.*Setup\.\$\{ext\}/);
+assert.match(builderConfiguration, /!\*\*\/\*\.map/);
+assert.match(builderConfiguration, /!\*\*\/\*\.env\*/);
+assert.match(builderConfiguration, /!\*\*\/pinterest-local-config\.enc/);
 assert.match(installerConfiguration, /\$\{AtLeastWin10\}/);
 
 console.log("Windows packaging configuration is valid.");
