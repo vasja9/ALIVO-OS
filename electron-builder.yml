@@ -9,6 +9,9 @@ files:
   - electron/**/*
   - ui/**/*
   - package.json
+  - "!**/*.map"
+  - "!**/*.env*"
+  - "!**/pinterest-local-config.enc"
 
 asar: true
 

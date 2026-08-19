@@ -5,15 +5,19 @@
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
-    "start": "electron .",
-    "build": "tsc --project tsconfig.json",
+    "start": "npm run build && electron .",
+    "build": "tsc --project tsconfig.json && npm run build:electron-runtime",
+    "build:electron-runtime": "node scripts/build-electron-runtime.mjs",
+    "test:pinterest:dom": "node --experimental-transform-types --test tests/unit/PinterestDomIntegration.test.ts",
+    "test:pinterest:local-config": "node --experimental-transform-types --test tests/unit/PinterestLocalVault.test.ts tests/unit/PinterestLocalConfigBoundary.test.ts",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",
-    "pack": "electron-builder --dir",
-    "package:verify": "node scripts/verify-windows-packaging.mjs",
-    "package:win": "npm run package:verify && electron-builder --win nsis --x64 --config electron-builder.yml",
-    "dist:windows": "electron-builder --win nsis --x64",
-    "package:windows": "electron-builder --win nsis --x64",
+    "pack": "npm run build && electron-builder --dir",
+    "package:portable:windows": "node scripts/build-portable-windows.mjs",
+    "package:verify": "npm run test:pinterest:dom && npm run test:pinterest:local-config && node --experimental-transform-types --test tests/unit/PortableWindowsPackage.test.ts && node scripts/verify-windows-packaging.mjs",
+    "package:win": "npm run build && npm run package:verify && electron-builder --win nsis --x64 --config electron-builder.yml",
+    "dist:windows": "npm run build && electron-builder --win nsis --x64",
+    "package:windows": "npm run build && electron-builder --win nsis --x64",
     "release:archive": "python3 scripts/create_release_archive.py"
   },
   "keywords": [],
@@ -22,7 +26,7 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "electron": "^37.2.6",
+    "electron": "^39.8.10",
     "electron-builder": "^26.0.12",
     "typescript": "^5.9.2"
   },
@@ -40,6 +44,8 @@
       "ui/**/*",
       "package.json",
       "!**/*.map",
+      "!**/*.env*",
+      "!**/pinterest-local-config.enc",
       "!**/node_modules/.cache/**/*"
     ],
     "win": {

@@ -1,4 +1,4 @@
-.PHONY: audit build test desktop-smoke package-windows release-archive
+.PHONY: audit build test pinterest-dom desktop-smoke package-windows release-archive
 
 audit:
 	python3 scripts/audit_build0.py
@@ -8,6 +8,9 @@ build:
 
 test:
 	node --experimental-transform-types --test tests/unit/*.test.ts
+
+pinterest-dom:
+	npm run test:pinterest:dom
 
 desktop-smoke:
 	node --check ui/shell.js && node --check electron/main.cjs
