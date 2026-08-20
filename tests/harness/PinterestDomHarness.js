@@ -125,11 +125,13 @@ const settle = async () => {
 };
 
 export function pinterestUiModuleToHarnessScript(source) {
-  const script = source.replace(
-    /^\s*import\s+[\s\S]*?\s+from\s+["']\.\/pinterest-connection-state\.js["'];?\s*/,
-    "",
-  );
-  if (script === source || /^\s*import\b/m.test(script)) {
+  const expectedImport = /^\uFEFF?import\s*\{[\s\S]*?\}\s*from\s*["']\.\/pinterest-connection-state\.js["'];?(?:\r\n|\n|$)/;
+  const match = source.match(expectedImport);
+  if (!match) {
+    throw new Error("Unexpected Pinterest UI ESM import in DOM harness");
+  }
+  const script = source.slice(match[0].length);
+  if (/^\s*import\b/m.test(script)) {
     throw new Error("Unexpected Pinterest UI ESM import in DOM harness");
   }
   return script;

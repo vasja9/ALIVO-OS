@@ -26,6 +26,10 @@ test("DOM harness normalizes Windows ESM line endings and rejects unhandled impo
     () => pinterestUiModuleToHarnessScript('import { transition } from "./other-module.js";\r\nconst state = transition;\r\n'),
     /Unexpected Pinterest UI ESM import in DOM harness/,
   );
+  assert.throws(
+    () => pinterestUiModuleToHarnessScript('import unused from "./other-module.js";\r\nimport { transition } from "./pinterest-connection-state.js";\r\nconst state = transition;\r\n'),
+    /Unexpected Pinterest UI ESM import in DOM harness/,
+  );
 });
 
 test("DOM harness runs startOAuth to connectionStatus to verifyConnection to readObservation without rendering provider payloads", async () => {
