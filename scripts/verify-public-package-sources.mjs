@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const loopbackPackageUrlPattern = /https?:\/\/(?:localhost|127(?:\.0){3}|0\.0\.0\.0)(?::\d+)?\/(?:npm|registry)(?:\/|$)/i;
 const replitPackageUrlPattern = /https?:\/\/(?:[a-z0-9-]+\.)*replit\.(?:local|dev|com)(?::\d+)?\/(?:npm|registry)(?:\/|$)/i;
@@ -81,6 +82,6 @@ function main() {
   console.log("Public package source validation passed.");
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main();
 }
