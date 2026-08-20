@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { createPinterestDomHarness, sequence } from "../harness/PinterestDomHarness.js";
+import { createPinterestDomHarness, pinterestUiModuleToHarnessScript, sequence } from "../harness/PinterestDomHarness.js";
 
 const authenticationRequired = { ok: true, state: "AuthenticationRequired" };
 const authenticated = { ok: true, state: "Authenticated" };
@@ -16,6 +16,17 @@ function preloadFor({
 } = {}) {
   return { startOAuth, connectionStatus, verifyConnection, readObservation };
 }
+
+test("DOM harness normalizes Windows ESM line endings and rejects unhandled imports", () => {
+  assert.equal(
+    pinterestUiModuleToHarnessScript('import { transition } from "./pinterest-connection-state.js";\r\nconst state = transition;\r\n'),
+    "const state = transition;\r\n",
+  );
+  assert.throws(
+    () => pinterestUiModuleToHarnessScript('import { transition } from "./other-module.js";\r\nconst state = transition;\r\n'),
+    /Unexpected Pinterest UI ESM import in DOM harness/,
+  );
+});
 
 test("DOM harness runs startOAuth to connectionStatus to verifyConnection to readObservation without rendering provider payloads", async () => {
   const secretPayload = {

@@ -124,6 +124,17 @@ const settle = async () => {
   for (let index = 0; index < 12; index += 1) await Promise.resolve();
 };
 
+export function pinterestUiModuleToHarnessScript(source) {
+  const script = source.replace(
+    /^\s*import\s+[\s\S]*?\s+from\s+["']\.\/pinterest-connection-state\.js["'];?\s*/,
+    "",
+  );
+  if (script === source || /^\s*import\b/m.test(script)) {
+    throw new Error("Unexpected Pinterest UI ESM import in DOM harness");
+  }
+  return script;
+}
+
 export function createPinterestDomHarness(preload = {}) {
   const document = createDocument();
   const snapshotHistory = [];
@@ -173,7 +184,7 @@ export function createPinterestDomHarness(preload = {}) {
     .replace(/^export /gm, "")
     .concat("\nglobalThis.__state = { actionAllowed, createPinterestUiState, hasPinterestContract, PINTEREST_UI_STATE, safeObservation, transition };\n");
   const uiSource = `(function({ actionAllowed, createPinterestUiState, hasPinterestContract, PINTEREST_UI_STATE, safeObservation, transition }) {
-${readFileSync(new URL("../../ui/pinterest.js", import.meta.url), "utf8").replace(/^import .*?;\n/, "")}
+ ${pinterestUiModuleToHarnessScript(readFileSync(new URL("../../ui/pinterest.js", import.meta.url), "utf8"))}
 })(globalThis.__state);`;
   const run = async () => {
     vm.runInContext(stateSource, vmContext, { filename: "ui/pinterest-connection-state.js" });

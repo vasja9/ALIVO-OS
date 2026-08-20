@@ -29,7 +29,10 @@ REQUIRED_DOCS = (
 
 def main() -> int:
     failures: list[str] = []
-    digest = hashlib.sha256(SPEC.read_bytes()).hexdigest()
+    spec_bytes = SPEC.read_bytes()
+    if b"\r\n" in spec_bytes or b"\r" in spec_bytes:
+        failures.append("frozen specification must use LF line endings")
+    digest = hashlib.sha256(spec_bytes).hexdigest()
     if digest != SPEC_SHA256:
         failures.append(f"frozen specification digest changed: {digest}")
 
