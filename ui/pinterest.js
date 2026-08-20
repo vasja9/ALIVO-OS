@@ -11,7 +11,7 @@ const labels = Object.freeze({
   [PINTEREST_UI_STATE.ConnectedLimitedPermissions]: ["Connected with limited permissions", "Pinterest is connected, but one or more read-only permissions are missing. Reauthorize to grant them."],
   [PINTEREST_UI_STATE.Verifying]: ["Checking connection", "Verifying Pinterest read capability. No write operation is performed."],
   [PINTEREST_UI_STATE.ObservationRead]: ["Read-only observation ready", "The latest Pinterest observation was received and remains advisory evidence."],
-  [PINTEREST_UI_STATE.ReauthorizationRequired]: ["Reauthorization required", "The Pinterest session is expired or invalid. Reauthorize before another observation can be read."],
+  [PINTEREST_UI_STATE.ReauthorizationRequired]: ["Reauthorization required", "The Pinterest session is expired, invalid, or locally stale. Reauthorize before another observation can be read."],
   [PINTEREST_UI_STATE.OAuthDenied]: ["OAuth denied", "Pinterest authorization was denied or cancelled. Try again only when approval is intended."],
   [PINTEREST_UI_STATE.TimeoutNetworkError]: ["Timeout / network error", "Pinterest did not respond. Retry later; provider details are hidden."],
   [PINTEREST_UI_STATE.RateLimited]: ["Rate limited", "Pinterest rate-limited the request. Wait before retrying."],

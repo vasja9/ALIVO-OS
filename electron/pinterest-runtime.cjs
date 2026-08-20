@@ -14,6 +14,7 @@ const DEFAULT_SCOPES = Object.freeze(["boards:read", "pins:read", "user_accounts
 const READ_CAPABILITIES = new Set(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"]);
 const SAFE_QUERY_KEYS = new Set(["ad_account_id", "bookmark", "end_date", "metric_types", "page_size", "pin_id", "start_date"]);
 const CALLBACK_TTL_MS = 10 * 60 * 1000;
+const TOKEN_EXCHANGE_TIMEOUT_MS = 30 * 1000;
 const EXPIRY_SKEW_MS = 60 * 1000;
 
 class PinterestRuntimeError extends Error {
@@ -220,13 +221,35 @@ function createPinterestRuntime(options = {}) {
   const openExternal = options.openExternal || (async () => {});
   const userDataPath = options.userDataPath || (() => process.env.ALIVO_USER_DATA_PATH || process.cwd());
   const allowTestEndpoints = options.allowTestEndpoints === true;
+  const isConfigurationCurrent = options.isConfigurationCurrent || (() => true);
+  const beforePersistCredential = options.beforePersistCredential || (async () => {});
   if (typeof fetchImpl !== "function") throw new PinterestRuntimeError("CONFIGURATION_FAILURE", "Fetch is unavailable in the Electron runtime");
 
   let sessionStore = options.sessionStore;
   let callbackServer;
   let callbackServerPort;
+  let callbackRuntimeOpen = true;
+  const activeCallbackRequests = new Set();
   const pending = new Map();
   const sessions = new Map();
+
+  function configurationCurrent() {
+    try {
+      return isConfigurationCurrent() === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function assertConfigurationCurrent() {
+    if (!configurationCurrent()) {
+      throw new PinterestRuntimeError("CONFIGURATION_SUPERSEDED", "Pinterest authorization configuration has changed");
+    }
+  }
+
+  function supersededCallback() {
+    return Object.freeze({ success: false, failure: "ConfigurationSuperseded" });
+  }
 
   function getStore() {
     if (!sessionStore) {
@@ -248,27 +271,55 @@ function createPinterestRuntime(options = {}) {
     return getStore().save(value);
   }
 
-  async function exchangeToken(parameters, previous) {
+  async function exchangeToken(parameters, previous, cancellationSignal) {
     const api = apiBase();
-    const response = await fetchImpl(new URL(PINTEREST_TOKEN_PATH, api), {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${encodeBasicCredentials(required(configuration.clientId, "Pinterest client ID"), required(configuration.clientSecret, "Pinterest client secret"))}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams(parameters),
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timeout = setTimeout(abort, Math.max(1, Number(options.tokenExchangeTimeoutMs) || TOKEN_EXCHANGE_TIMEOUT_MS));
+    cancellationSignal?.addEventListener?.("abort", abort, { once: true });
+    const interrupted = new Promise((_, reject) => {
+      if (controller.signal.aborted) {
+        reject(new PinterestRuntimeError("TOKEN_EXCHANGE_INTERRUPTED", "Pinterest authorization exchange was interrupted"));
+      } else {
+        controller.signal.addEventListener("abort", () => reject(new PinterestRuntimeError("TOKEN_EXCHANGE_INTERRUPTED", "Pinterest authorization exchange was interrupted")), { once: true });
+      }
     });
-    const body = await jsonOrUndefined(response);
-    if (!response.ok) {
-      const failure = response.status === 429 ? "RATE_LIMITED" : response.status === 401 ? "REAUTHORIZATION_REQUIRED" : response.status >= 500 ? "AUTHENTICATION_UNAVAILABLE" : "AUTHENTICATION_FAILURE";
-      throw new PinterestRuntimeError(failure, safeProviderMessage(response.status));
+    try {
+      const response = await Promise.race([
+        fetchImpl(new URL(PINTEREST_TOKEN_PATH, api), {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${encodeBasicCredentials(required(configuration.clientId, "Pinterest client ID"), required(configuration.clientSecret, "Pinterest client secret"))}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "application/json",
+          },
+          body: new URLSearchParams(parameters),
+          signal: controller.signal,
+        }),
+        interrupted,
+      ]);
+      const body = await Promise.race([jsonOrUndefined(response), interrupted]);
+      if (!response.ok) {
+        const failure = response.status === 429 ? "RATE_LIMITED" : response.status === 401 ? "REAUTHORIZATION_REQUIRED" : response.status >= 500 ? "AUTHENTICATION_UNAVAILABLE" : "AUTHENTICATION_FAILURE";
+        throw new PinterestRuntimeError(failure, safeProviderMessage(response.status));
+      }
+      return safeTokenRecord(body, previous, now);
+    } catch (error) {
+      if (error instanceof PinterestRuntimeError && error.code === "TOKEN_EXCHANGE_INTERRUPTED") throw error;
+      if (error?.name === "AbortError") throw new PinterestRuntimeError("TOKEN_EXCHANGE_INTERRUPTED", "Pinterest authorization exchange was interrupted");
+      throw new PinterestRuntimeError("NETWORK_UNAVAILABLE", "Pinterest authentication request failed");
+    } finally {
+      clearTimeout(timeout);
+      cancellationSignal?.removeEventListener?.("abort", abort);
     }
-    return safeTokenRecord(body, previous, now);
   }
 
   async function persistCredential(credentialId, record, context = {}) {
+    assertConfigurationCurrent();
+    await beforePersistCredential({ credentialId, context });
+    assertConfigurationCurrent();
     const stored = await readSessions();
+    assertConfigurationCurrent();
     stored[credentialId] = {
       ...record,
       ...(context.businessPackageId !== undefined ? { businessPackageId: context.businessPackageId } : {}),
@@ -279,9 +330,12 @@ function createPinterestRuntime(options = {}) {
   }
 
   async function removeCredential(credentialId) {
+    if (!configurationCurrent()) return false;
     const stored = await readSessions();
+    if (!configurationCurrent()) return false;
     delete stored[credentialId];
     await writeSessions(stored);
+    return true;
   }
 
   async function refreshCredential(credentialId, record) {
@@ -390,6 +444,8 @@ function createPinterestRuntime(options = {}) {
   }
 
   async function startAuthorization(input = {}) {
+    assertConfigurationCurrent();
+    if (!callbackRuntimeOpen) throw new PinterestRuntimeError("CONFIGURATION_SUPERSEDED", "Pinterest authorization configuration has changed");
     validateConfiguration(configuration, true, allowTestEndpoints);
     const credentialId = required(input.credentialId, "Pinterest credential ID");
     const businessPackageId = required(input.businessPackageId?.value || input.businessPackageId, "Business Package ID");
@@ -409,6 +465,7 @@ function createPinterestRuntime(options = {}) {
   }
 
   async function handleCallbackUrl(rawUrl) {
+    if (!configurationCurrent() || !callbackRuntimeOpen) return supersededCallback();
     const redirect = validateRedirectUri(configuration.redirectUri);
     const callback = new URL(rawUrl);
     if (callback.origin !== redirect.origin || callback.pathname !== redirect.pathname) throw new PinterestRuntimeError("CALLBACK_VALIDATION_FAILURE", "Pinterest callback URI does not match configuration");
@@ -420,14 +477,35 @@ function createPinterestRuntime(options = {}) {
     if (providerError) return { success: false, failure: "PermissionDenied" };
     const code = callback.searchParams.get("code");
     if (!code) throw new PinterestRuntimeError("CALLBACK_VALIDATION_FAILURE", "Pinterest callback did not contain an authorization code");
-    const token = await exchangeToken({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: configuration.redirectUri,
-      code_verifier: context.codeVerifier,
-      ...(configuration.continuousRefresh ? { continuous_refresh: "true" } : {}),
-    });
-    await persistCredential(context.credentialId, token, context);
+    const callbackRequest = new AbortController();
+    activeCallbackRequests.add(callbackRequest);
+    let token;
+    try {
+      token = await exchangeToken({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: configuration.redirectUri,
+        code_verifier: context.codeVerifier,
+        ...(configuration.continuousRefresh ? { continuous_refresh: "true" } : {}),
+      }, undefined, callbackRequest.signal);
+    } catch (error) {
+      if (error instanceof PinterestRuntimeError && error.code === "TOKEN_EXCHANGE_INTERRUPTED") {
+        return !configurationCurrent() || !callbackRuntimeOpen
+          ? supersededCallback()
+          : Object.freeze({ success: false, failure: "AuthenticationUnavailable" });
+      }
+      throw error;
+    } finally {
+      activeCallbackRequests.delete(callbackRequest);
+    }
+    if (!configurationCurrent() || !callbackRuntimeOpen) return supersededCallback();
+    try {
+      await persistCredential(context.credentialId, token, context);
+    } catch (error) {
+      if (error instanceof PinterestRuntimeError && error.code === "CONFIGURATION_SUPERSEDED") return supersededCallback();
+      throw error;
+    }
+    if (!configurationCurrent() || !callbackRuntimeOpen) return supersededCallback();
     return Object.freeze({ success: true, credentialId: context.credentialId, expiresAt: token.expiresAt });
   }
 
@@ -490,10 +568,14 @@ function createPinterestRuntime(options = {}) {
   }
 
   async function close() {
-    if (!callbackServer) return;
-    await new Promise((resolve) => callbackServer.close(() => resolve()));
-    callbackServer = undefined;
-    callbackServerPort = undefined;
+    callbackRuntimeOpen = false;
+    pending.clear();
+    for (const request of activeCallbackRequests) request.abort();
+    if (callbackServer) {
+      await new Promise((resolve) => callbackServer.close(() => resolve()));
+      callbackServer = undefined;
+      callbackServerPort = undefined;
+    }
   }
 
   return Object.freeze({

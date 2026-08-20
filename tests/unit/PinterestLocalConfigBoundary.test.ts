@@ -11,6 +11,8 @@ const main = readFileSync("electron/main.cjs", "utf8");
 const preload = readFileSync("electron/preload.cjs", "utf8");
 const vault = readFileSync("electron/pinterest-local-vault.cjs", "utf8");
 const runtime = readFileSync("electron/pinterest-runtime.cjs", "utf8");
+const lifecycle = readFileSync("electron/pinterest-lifecycle.cjs", "utf8");
+const controller = readFileSync("electron/pinterest-ipc-controller.cjs", "utf8");
 const builder = readFileSync("electron-builder.yml", "utf8");
 const packageJson = readFileSync("package.json", "utf8");
 const settings = readFileSync("ui/settings.js", "utf8");
@@ -23,10 +25,17 @@ test("local Pinterest configuration stays behind trusted main-process IPC", () =
     assert.match(main, new RegExp(`ipcMain\\.handle\\("${channel}"`));
   }
   assert.match(main, /createPinterestLocalVault/);
+  assert.match(main, /createPinterestLifecycle/);
+  assert.match(main, /createPinterestIpcController/);
   assert.match(main, /assertTrustedPinterestSender\(_event, mainWindow, trustedUiPaths\)/);
   assert.match(main, /app\.isPackaged/);
   assert.match(main, /resolveConfiguration\(process\.env, !app\.isPackaged\)/);
-  assert.match(main, /await clearPinterestSessionFile\(\);[\s\S]*?await resetPinterestRuntime\(\);/);
+  assert.match(controller, /saveLocalConfig/);
+  assert.match(controller, /clearLocalConfig/);
+  assert.match(lifecycle, /configurationGeneration \+= 1/);
+  assert.match(lifecycle, /await retireRuntime\(\);[\s\S]*?const result = await change\(\);[\s\S]*?await clearSessionFile\(\);/);
+  assert.match(runtime, /CONFIGURATION_SUPERSEDED/);
+  assert.match(runtime, /isConfigurationCurrent/);
 });
 
 test("local configuration IPC inherits trusted sender and frame rejection", () => {
@@ -70,6 +79,7 @@ test("secret-bearing runtime paths do not log and package/source maps do not emb
   assert.match(runtime, /PINTEREST_TOKEN_PATH/);
   assert.doesNotMatch(runtime, /console\.(log|error|warn|info)\([^)]*clientSecret/i);
   assert.match(runtime, /redactSensitive/);
+  assert.doesNotMatch(controller, /console\.(log|error|warn|info)/);
   assert.match(builder, /asar: true/);
   assert.match(builder, /!\*\*\/\*\.map/);
   assert.match(builder, /!\*\*\/\*\.env\*/);

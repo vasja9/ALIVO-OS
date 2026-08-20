@@ -31,7 +31,9 @@ const SAFE_MESSAGES = Object.freeze({
   TIMEOUT: "Pinterest request timed out",
   NETWORK_FAILURE: "Pinterest network request failed",
   AUTHENTICATION_REQUIRED: "Pinterest authorization is required",
-  REAUTHORIZATION_REQUIRED: "Pinterest session is expired or invalid. Reauthorize before continuing.",
+  REAUTHORIZATION_REQUIRED: "Pinterest session is expired, invalid, stale, or damaged. Reauthorize before continuing.",
+  SESSION_INTEGRITY_FAILURE: "Pinterest local session is stale or damaged. Reauthorize before continuing.",
+  SESSION_RECONFIGURED: "Pinterest local credentials changed. Reauthorize before continuing.",
 });
 
 const text = (value, fallback = "") => typeof value === "string" && value.trim() ? value.trim().slice(0, 240) : fallback;

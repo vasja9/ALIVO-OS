@@ -65,6 +65,15 @@ test("Pinterest UI distinguishes an invalid or expired session from a missing sc
   assert.doesNotMatch(state.message, /raw|accessToken|secret/i);
 });
 
+test("Pinterest UI routes encrypted-session integrity failures to reauthorization instead of disconnected", () => {
+  const state = transition(createPinterestUiState(), {
+    type: "STATUS_RESULT",
+    value: { ok: false, state: "ReauthorizationRequired", code: "SESSION_INTEGRITY_FAILURE" },
+  });
+  assert.equal(state.uiState, PINTEREST_UI_STATE.ReauthorizationRequired);
+  assert.match(state.message, /stale or damaged|reauthorize/i);
+});
+
 test("Pinterest UI distinguishes denial, reauthorization, rate limit, and network timeout", () => {
   assert.equal(transition(createPinterestUiState(), { type: "START_RESULT", value: { ok: false, code: "OAUTH_DENIED" } }).uiState, PINTEREST_UI_STATE.OAuthDenied);
   assert.equal(transition(createPinterestUiState(), { type: "OBSERVATION_RESULT", value: { ok: true, state: "ReauthorizationRequired" } }).uiState, PINTEREST_UI_STATE.ReauthorizationRequired);

@@ -14,6 +14,9 @@ const {
 } = require("../../electron/pinterest-runtime.cjs");
 const { assertTrustedPinterestSender } = require("../../electron/pinterest-ipc-security.cjs");
 const { createPinterestContextResolver } = require("../../electron/pinterest-context.cjs");
+const { createPinterestLifecycle } = require("../../electron/pinterest-lifecycle.cjs");
+const { createPinterestIpcController } = require("../../electron/pinterest-ipc-controller.cjs");
+const { transition, createPinterestUiState, PINTEREST_UI_STATE } = await import("../../ui/pinterest-connection-state.js");
 const { createPinterestElectronComposition } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
@@ -33,6 +36,66 @@ function response(status: number, body: unknown, headers: Record<string, string>
     status,
     headers: { get: (name: string) => headers[name.toLowerCase()] },
     text: async () => JSON.stringify(body),
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function createLifecycleIpcFixture({
+  directory,
+  configuration,
+  reconfiguredConfiguration,
+  beforePersistCredential,
+  fetchImpl,
+}: {
+  directory: string;
+  configuration: typeof CONFIGURATION;
+  reconfiguredConfiguration?: typeof CONFIGURATION;
+  beforePersistCredential?: () => Promise<void>;
+  fetchImpl?: (url: string, init: RequestInit) => Promise<unknown>;
+}) {
+  let activeConfiguration = configuration;
+  let latestRuntime: ReturnType<typeof createPinterestRuntime> | undefined;
+  const vault = {
+    async save() {
+      activeConfiguration = reconfiguredConfiguration || configuration;
+      return { configured: true, encryptionAvailable: true };
+    },
+    async clear() {
+      return { configured: false, encryptionAvailable: true };
+    },
+    async status() {
+      return { configured: activeConfiguration === configuration, encryptionAvailable: true };
+    },
+  };
+  const lifecycle = createPinterestLifecycle({
+    resolveConfiguration: async () => activeConfiguration,
+    createRuntime: (options: Record<string, unknown>) => {
+      latestRuntime = createPinterestRuntime({
+        ...options,
+        userDataPath: () => directory,
+        openExternal: async () => {},
+        fetchImpl: fetchImpl || (async () => response(200, { access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: 3600, scope: "pins:read" })),
+        now: () => NOW,
+        beforePersistCredential,
+      });
+      return latestRuntime;
+    },
+    createComposition: () => ({ verifyConnection: async () => ({ state: "Available" }), readObservation: async () => ({ state: "Read" }) }),
+    clearSessionFile: async () => {
+      await rm(path.join(directory, "state", "pinterest-sessions.enc"), { force: true });
+      await rm(path.join(directory, "state", "pinterest-sessions.enc.tmp"), { force: true });
+    },
+  });
+  const context = createPinterestContextResolver({ ALIVO_PINTEREST_BUSINESS_PACKAGE_ID: "ALIVO", ALIVO_PINTEREST_CREDENTIAL_ID: "credential:pinterest:alivo" });
+  return {
+    lifecycle,
+    controller: createPinterestIpcController({ getLifecycle: () => lifecycle, getLocalVault: () => vault, context }),
+    runtime: () => latestRuntime,
   };
 }
 
@@ -101,6 +164,157 @@ test("callback exchanges code server-side, persists opaque session material, and
     assert.match(JSON.stringify(calls[0].init.headers), /Basic/);
   } finally {
     await runtime.close();
+  }
+});
+
+test("separate OAuth-start, callback, and status entry points retain an encrypted session with one configuration", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "alivo-pinterest-ipc-"));
+  try {
+    const fixture = createLifecycleIpcFixture({ directory, configuration: CONFIGURATION });
+    const started = await fixture.controller.startOAuth({ correlationIdentifier: "separate-ipc-start" });
+    assert.equal(started.ok, true);
+    const runtime = fixture.runtime();
+    assert.ok(runtime);
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    const callback = await runtime.handleCallbackUrl(`${CONFIGURATION.redirectUri}?code=synthetic-code&state=${state}`);
+    assert.equal(callback.success, true);
+    assert.deepEqual(await fixture.controller.connectionStatus(), {
+      ok: true,
+      state: "Authenticated",
+      expiresAt: "2026-08-19T13:00:00.000Z",
+      scope: "pins:read",
+    });
+    await runtime.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("credential reconfiguration fences an in-flight callback and status becomes reauthorization rather than disconnected", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "alivo-pinterest-ipc-race-"));
+  const reachedPersist = deferred();
+  const releasePersist = deferred();
+  const replacementConfiguration = { ...CONFIGURATION, clientId: "replacement-client", clientSecret: "replacement-secret", sessionSecret: "replacement-session-secret" };
+  try {
+    const fixture = createLifecycleIpcFixture({
+      directory,
+      configuration: CONFIGURATION,
+      reconfiguredConfiguration: replacementConfiguration,
+      beforePersistCredential: async () => {
+        reachedPersist.resolve();
+        await releasePersist.promise;
+      },
+    });
+    const started = await fixture.controller.startOAuth();
+    const runtimeA = fixture.runtime();
+    assert.ok(runtimeA);
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    const callback = runtimeA.handleCallbackUrl(`${CONFIGURATION.redirectUri}?code=synthetic-code&state=${state}`);
+    await reachedPersist.promise;
+
+    const reconfigure = fixture.controller.saveLocalConfig({
+      clientId: "replacement-client",
+      clientSecret: "replacement-secret",
+      redirectUri: CONFIGURATION.redirectUri,
+    });
+    releasePersist.resolve();
+
+    const callbackResult = await callback;
+    const configured = await reconfigure;
+    assert.deepEqual(callbackResult, { success: false, failure: "ConfigurationSuperseded" });
+    assert.equal(configured.ok, true);
+    assert.deepEqual(
+      await new EncryptedPinterestSessionStore(path.join(directory, "state", "pinterest-sessions.enc"), replacementConfiguration.sessionSecret).load(),
+      {},
+    );
+
+    const status = await fixture.controller.connectionStatus();
+    assert.deepEqual(status, { ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" });
+    const ui = transition(createPinterestUiState(), { type: "STATUS_RESULT", value: status });
+    assert.equal(ui.uiState, PINTEREST_UI_STATE.ReauthorizationRequired);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("credential reconfiguration aborts a hung callback exchange instead of waiting indefinitely", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "alivo-pinterest-ipc-hung-callback-"));
+  const exchangeStarted = deferred();
+  const replacementConfiguration = { ...CONFIGURATION, clientId: "replacement-client", clientSecret: "replacement-secret", sessionSecret: "replacement-session-secret" };
+  try {
+    const fixture = createLifecycleIpcFixture({
+      directory,
+      configuration: CONFIGURATION,
+      reconfiguredConfiguration: replacementConfiguration,
+      fetchImpl: async () => {
+        exchangeStarted.resolve();
+        return await new Promise(() => {});
+      },
+    });
+    const started = await fixture.controller.startOAuth();
+    const runtimeA = fixture.runtime();
+    assert.ok(runtimeA);
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    const callback = runtimeA.handleCallbackUrl(`${CONFIGURATION.redirectUri}?code=synthetic-code&state=${state}`);
+    await exchangeStarted.promise;
+
+    const configured = await Promise.race([
+      fixture.controller.saveLocalConfig({
+        clientId: "replacement-client",
+        clientSecret: "replacement-secret",
+        redirectUri: CONFIGURATION.redirectUri,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("credential reconfiguration did not interrupt the callback")), 250)),
+    ]);
+    assert.equal(configured.ok, true);
+    assert.deepEqual(await callback, { success: false, failure: "ConfigurationSuperseded" });
+    assert.deepEqual(
+      await new EncryptedPinterestSessionStore(path.join(directory, "state", "pinterest-sessions.enc"), replacementConfiguration.sessionSecret).load(),
+      {},
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("credential reconfiguration aborts a callback whose provider response body never completes", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "alivo-pinterest-ipc-hung-body-"));
+  const responseStarted = deferred();
+  const replacementConfiguration = { ...CONFIGURATION, clientId: "replacement-client", clientSecret: "replacement-secret", sessionSecret: "replacement-session-secret" };
+  try {
+    const fixture = createLifecycleIpcFixture({
+      directory,
+      configuration: CONFIGURATION,
+      reconfiguredConfiguration: replacementConfiguration,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => undefined },
+        text: async () => {
+          responseStarted.resolve();
+          return await new Promise(() => {});
+        },
+      }),
+    });
+    const started = await fixture.controller.startOAuth();
+    const runtimeA = fixture.runtime();
+    assert.ok(runtimeA);
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    const callback = runtimeA.handleCallbackUrl(`${CONFIGURATION.redirectUri}?code=synthetic-code&state=${state}`);
+    await responseStarted.promise;
+
+    const configured = await Promise.race([
+      fixture.controller.saveLocalConfig({
+        clientId: "replacement-client",
+        clientSecret: "replacement-secret",
+        redirectUri: CONFIGURATION.redirectUri,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("credential reconfiguration did not interrupt response parsing")), 250)),
+    ]);
+    assert.equal(configured.ok, true);
+    assert.deepEqual(await callback, { success: false, failure: "ConfigurationSuperseded" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
