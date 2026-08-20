@@ -4,12 +4,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const packageJson = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
-const makefile = readFileSync(new URL("../../Makefile", import.meta.url), "utf8");
-const replit = readFileSync(new URL("../../.replit", import.meta.url), "utf8");
-const attributes = readFileSync(new URL("../../.gitattributes", import.meta.url), "utf8");
-const workflowTemplate = readFileSync(new URL("../../ci/templates/pinterest-oauth-test3-windows.yml", import.meta.url), "utf8");
-const auditSource = readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8");
-const harnessSource = readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8");
+const normalizeLineEndings = (source: string) => source.replace(/\r\n?/g, "\n");
+const makefile = normalizeLineEndings(readFileSync(new URL("../../Makefile", import.meta.url), "utf8"));
+const replit = normalizeLineEndings(readFileSync(new URL("../../.replit", import.meta.url), "utf8"));
+const attributes = normalizeLineEndings(readFileSync(new URL("../../.gitattributes", import.meta.url), "utf8"));
+const workflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3-windows.yml", import.meta.url), "utf8"));
+const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
+const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 
 test("Pinterest DOM integration has a direct Node transform gate", () => {
   assert.equal(
@@ -18,6 +19,12 @@ test("Pinterest DOM integration has a direct Node transform gate", () => {
   );
   assert.match(makefile, /^pinterest-dom:\n\tnpm run test:pinterest:dom$/m);
   assert.match(replit, /name = "pinterest-dom"[\s\S]*?args = "npm run test:pinterest:dom"[\s\S]*?isValidation = true/);
+});
+
+test("Pinterest DOM validation contracts are independent of Windows checkout line endings", () => {
+  const crlfSource = "pinterest-dom:\r\n\tnpm run test:pinterest:dom\r\n";
+  assert.equal(normalizeLineEndings(crlfSource), "pinterest-dom:\n\tnpm run test:pinterest:dom\n");
+  assert.match(normalizeLineEndings("before\r\nmiddle\rafter\n"), /^before\nmiddle\nafter\n$/);
 });
 
 test("Pinterest DOM gate fails closed before Windows package verification", () => {

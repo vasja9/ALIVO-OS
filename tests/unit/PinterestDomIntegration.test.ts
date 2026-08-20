@@ -32,6 +32,12 @@ test("DOM harness normalizes Windows ESM line endings and rejects unhandled impo
   );
 });
 
+test("DOM harness accepts LF and CRLF source with the same transform semantics", () => {
+  const lfSource = 'import { transition } from "./pinterest-connection-state.js";\nconst state = transition;\n';
+  const crlfSource = lfSource.replace(/\n/g, "\r\n");
+  assert.equal(pinterestUiModuleToHarnessScript(crlfSource), pinterestUiModuleToHarnessScript(lfSource).replace(/\n/g, "\r\n"));
+});
+
 test("DOM harness runs startOAuth to connectionStatus to verifyConnection to readObservation without rendering provider payloads", async () => {
   const secretPayload = {
     ok: true,

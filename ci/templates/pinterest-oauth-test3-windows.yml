@@ -1,10 +1,10 @@
-name: Pinterest OAuth test.3.2 portable release
+name: Pinterest OAuth test.3.3 portable release
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - pinterest-oauth-test.3.2
+      - pinterest-oauth-test.3.3
 
 permissions:
   contents: write
@@ -13,9 +13,9 @@ jobs:
   build-and-release:
     name: Build unsigned Windows x64 portable release
     runs-on: windows-latest
-    if: github.ref == 'refs/tags/pinterest-oauth-test.3.2'
+    if: github.ref == 'refs/tags/pinterest-oauth-test.3.3'
     env:
-      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3.2
+      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3.3
       CI: "true"
     steps:
       - name: Check out the tagged source
@@ -77,13 +77,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-           $zip = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.2-win-x64.zip"
-           $sidecar = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.2-win-x64.zip.sha256"
+           $zip = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.3-win-x64.zip"
+           $sidecar = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.3-win-x64.zip.sha256"
           $expected = (Get-Content $sidecar.FullName -Raw).Trim().Split(" ")[0].ToLowerInvariant()
           $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($expected -ne $actual) { throw "Portable ZIP checksum does not match its sidecar" }
 
-           $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3.2-audit"
+            $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3.3-audit"
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $auditDirectory -Force
           $forbidden = Get-ChildItem -LiteralPath $auditDirectory -Recurse -Force | Where-Object {
             $_.FullName -match '(^|[\\/])(?:tests?|coverage|src|scripts|\.local|\.git|node_modules)(?:[\\/]|$)' -or
@@ -92,7 +92,7 @@ jobs:
           if ($forbidden) {
             throw "Portable ZIP contains forbidden paths: $($forbidden.FullName -join ', ')"
           }
-           if (-not (Test-Path (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3.2-win-x64/ALIVO OS.exe"))) {
+            if (-not (Test-Path (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3.3-win-x64/ALIVO OS.exe"))) {
             throw "Portable ZIP does not contain ALIVO OS.exe"
           }
 
@@ -103,7 +103,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = "${{ github.ref_name }}"
-           if ($tag -ne "pinterest-oauth-test.3.2") {
+           if ($tag -ne "pinterest-oauth-test.3.3") {
             throw "Unexpected release tag: $tag"
           }
           $packageSuffix = $tag -replace '^pinterest-oauth-', ''
