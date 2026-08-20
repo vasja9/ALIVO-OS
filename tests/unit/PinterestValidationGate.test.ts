@@ -18,6 +18,6 @@ test("Pinterest DOM integration has a direct Node transform gate", () => {
 test("Pinterest DOM gate fails closed before Windows package verification", () => {
   assert.match(
     packageJson.scripts["package:verify"],
-    /^npm run test:pinterest:dom && npm run test:pinterest:local-config && node --experimental-transform-types --test tests\/unit\/PortableWindowsPackage\.test\.ts && node scripts\/verify-windows-packaging\.mjs$/,
+    /^npm run verify:package-sources && npm run test:pinterest:dom && npm run test:pinterest:local-config && node --experimental-transform-types --test tests\/unit\/PortableWindowsPackage\.test\.ts && node scripts\/verify-windows-packaging\.mjs$/,
   );
 });

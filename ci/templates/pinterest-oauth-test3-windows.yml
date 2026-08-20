@@ -1,10 +1,10 @@
-name: Pinterest OAuth test.3 portable release
+name: Pinterest OAuth test.3.1 portable release
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - pinterest-oauth-test.3
+      - pinterest-oauth-test.3.1
 
 permissions:
   contents: write
@@ -13,9 +13,9 @@ jobs:
   build-and-release:
     name: Build unsigned Windows x64 portable release
     runs-on: windows-latest
-    if: github.ref == 'refs/tags/pinterest-oauth-test.3'
+    if: github.ref == 'refs/tags/pinterest-oauth-test.3.1'
     env:
-      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3
+      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3.1
       CI: "true"
     steps:
       - name: Check out the tagged source
@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Verify public package sources
+        run: npm run verify:package-sources
 
       - name: Install locked dependencies
         run: npm ci
@@ -72,13 +75,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $zip = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3-win-x64.zip"
-          $sidecar = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3-win-x64.zip.sha256"
+          $zip = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.1-win-x64.zip"
+          $sidecar = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.1-win-x64.zip.sha256"
           $expected = (Get-Content $sidecar.FullName -Raw).Trim().Split(" ")[0].ToLowerInvariant()
           $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($expected -ne $actual) { throw "Portable ZIP checksum does not match its sidecar" }
 
-          $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3-audit"
+          $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3.1-audit"
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $auditDirectory -Force
           $forbidden = Get-ChildItem -LiteralPath $auditDirectory -Recurse -Force | Where-Object {
             $_.FullName -match '(^|[\\/])(?:tests?|coverage|src|scripts|\.local|\.git|node_modules)(?:[\\/]|$)' -or
@@ -87,7 +90,7 @@ jobs:
           if ($forbidden) {
             throw "Portable ZIP contains forbidden paths: $($forbidden.FullName -join ', ')"
           }
-          if (-not (Test-Path (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3-win-x64/ALIVO OS.exe"))) {
+          if (-not (Test-Path (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3.1-win-x64/ALIVO OS.exe"))) {
             throw "Portable ZIP does not contain ALIVO OS.exe"
           }
 
@@ -97,18 +100,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "pinterest-oauth-test.3"
+          $tag = "${{ github.ref_name }}"
+          if ($tag -ne "pinterest-oauth-test.3.1") {
+            throw "Unexpected release tag: $tag"
+          }
+          $packageSuffix = $tag -replace '^pinterest-oauth-', ''
+          $releaseBase = "ALIVO-OS-Pinterest-OAuth-$packageSuffix-win-x64"
           gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag `
               --repo "$env:GITHUB_REPOSITORY" `
               --verify-tag `
-              --title "Pinterest OAuth test.3" `
+              --title "Pinterest OAuth $packageSuffix" `
               --prerelease `
               --notes "Unsigned Windows x64 test artifact. Built without Pinterest credentials or repository secrets. The known extract-zip CVE remains a transitive build-tool limitation documented in TECHNICAL_DEBT.md."
           }
           gh release upload $tag `
-            "release/ALIVO-OS-Pinterest-OAuth-test.3-win-x64.zip" `
-            "release/ALIVO-OS-Pinterest-OAuth-test.3-win-x64.zip.sha256" `
+            "release/$releaseBase.zip" `
+            "release/$releaseBase.zip.sha256" `
             --repo "$env:GITHUB_REPOSITORY" `
             --clobber
