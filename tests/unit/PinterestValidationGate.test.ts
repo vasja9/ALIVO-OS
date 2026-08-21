@@ -15,6 +15,7 @@ const test36WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../
 const test37WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.7-windows.yml", import.meta.url), "utf8"));
 const test38WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.8-windows.yml", import.meta.url), "utf8"));
 const test39WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.9-windows.yml", import.meta.url), "utf8"));
+const test310WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.10-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 const electronMainSource = normalizeLineEndings(readFileSync(new URL("../../electron/main.cjs", import.meta.url), "utf8"));
@@ -98,6 +99,14 @@ test("source-only test.3.9 template retains fail-closed Windows validation", () 
   assert.match(test39WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
 });
 
+test("source-only test.3.10 template retains fail-closed Windows validation", () => {
+  assert.match(test310WorkflowTemplate, /^name: Pinterest OAuth test\.3\.10 portable release$/m);
+  assert.match(test310WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.10/);
+  assert.match(test310WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.10'/);
+  assert.match(test310WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.10/);
+  assert.match(test310WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
 test("Windows Electron runner expects only the fail-closed reconfiguration state", () => {
   assert.match(electronRunnerSource, /const reconfiguredStatus = \{ ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" \}/);
   assert.match(electronRunnerSource, /assert\.deepEqual\(trustedMainFrame, reconfiguredStatus\)/);
@@ -109,7 +118,7 @@ test("Windows Electron runner uses a completed exact-frame event instead of poll
   assert.match(electronRunnerSource, /const \{ app, BrowserWindow, webFrameMain \} = require\("electron"\)/);
   assert.match(electronRunnerSource, /contents\.on\("did-frame-finish-load", onFrameFinished\)/);
   assert.match(electronRunnerSource, /frame = webFrameMain\.fromId\(frameProcessId, frameRoutingId\)/);
-  assert.match(electronRunnerSource, /correlatesLoadedSubframe\(\{\s*isMainFrame,\s*frameProcessId,\s*frameRoutingId,\s*frame,\s*\}, sourceUrl\)/);
+  assert.match(electronRunnerSource, /correlateLoadedSubframe\(\{\s*isMainFrame,\s*frameProcessId,\s*frameRoutingId,\s*frame,\s*\}, sourceUrl\)/);
   assert.match(electronRunnerSource, /if \(settled\) return/);
   assert.match(electronRunnerSource, /settleOnce\(undefined, frame\)/);
   assert.match(electronRunnerSource, /Timed out waiting for the exact foreign iframe load event/);
@@ -118,6 +127,9 @@ test("Windows Electron runner uses a completed exact-frame event instead of poll
 });
 
 test("frame correlation does not re-check IDs against WebFrameMain properties", () => {
+  assert.match(electronFrameSyncSource, /fileURLToPath/);
+  assert.match(electronFrameSyncSource, /path\.win32\.resolve\(path\.win32\.normalize\(filePath\)\)/);
+  assert.match(electronFrameSyncSource, /parsed\.host !== "" && parsed\.host\.toLowerCase\(\) !== "localhost"/);
   assert.match(electronFrameSyncSource, /isMainFrame === false/);
   assert.match(electronFrameSyncSource, /Number\.isInteger\(frameProcessId\)/);
   assert.match(electronFrameSyncSource, /Number\.isInteger\(frameRoutingId\)/);

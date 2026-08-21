@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, webFrameMain } = require("electron");
-const { canonicalFrameUrl, correlatesLoadedSubframe } = require("./pinterest-electron-frame-sync.cjs");
+const { canonicalFrameUrl, correlateLoadedSubframe } = require("./pinterest-electron-frame-sync.cjs");
 const { appendCleanupFailure } = require("./pinterest-electron-teardown.cjs");
 
 const projectRoot = path.resolve(__dirname, "../..");
@@ -138,7 +138,7 @@ async function addAndFindFrame(contents, sourceUrl) {
     } catch (error) {
       lookupError = String(error?.message || error).slice(0, 160);
     }
-    const correlated = !lookupError && correlatesLoadedSubframe({
+    const correlation = !lookupError && correlateLoadedSubframe({
       isMainFrame,
       frameProcessId,
       frameRoutingId,
@@ -150,10 +150,19 @@ async function addAndFindFrame(contents, sourceUrl) {
       frameProcessId,
       frameRoutingId,
       url: diagnosticUrl(frame?.url),
-      correlated,
+      correlated: correlation && correlation.correlated,
+      predicates: correlation ? correlation.predicates : {
+        isNonMainFrame: false,
+        validProcessId: false,
+        validRoutingId: false,
+        framePresent: false,
+        canonicalUrlMatch: false,
+      },
+      expected: correlation?.expected || diagnosticUrl(sourceUrl),
+      observed: correlation?.observed || diagnosticUrl(frame?.url),
       ...(lookupError ? { lookupError } : {}),
     });
-    if (!correlated) return;
+    if (!correlation || !correlation.correlated) return;
     settleOnce(undefined, frame);
   };
   const onFrameFailed = (_event, code, description, validatedUrl, isMainFrame, frameProcessId, frameRoutingId) => {
