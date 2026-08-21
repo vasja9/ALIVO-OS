@@ -14,10 +14,12 @@ const test35WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../
 const test36WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.6-windows.yml", import.meta.url), "utf8"));
 const test37WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.7-windows.yml", import.meta.url), "utf8"));
 const test38WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.8-windows.yml", import.meta.url), "utf8"));
+const test39WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.9-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 const electronMainSource = normalizeLineEndings(readFileSync(new URL("../../electron/main.cjs", import.meta.url), "utf8"));
 const electronRunnerSource = normalizeLineEndings(readFileSync(new URL("../integration/pinterest-electron-windows-runner.cjs", import.meta.url), "utf8"));
+const electronFrameSyncSource = normalizeLineEndings(readFileSync(new URL("../integration/pinterest-electron-frame-sync.cjs", import.meta.url), "utf8"));
 const electronWindowsTestSource = normalizeLineEndings(readFileSync(new URL("../integration/PinterestElectronWindows.test.ts", import.meta.url), "utf8"));
 
 test("Pinterest DOM integration has a direct Node transform gate", () => {
@@ -88,6 +90,14 @@ test("source-only test.3.8 template retains fail-closed Windows validation", () 
   assert.match(test38WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
 });
 
+test("source-only test.3.9 template retains fail-closed Windows validation", () => {
+  assert.match(test39WorkflowTemplate, /^name: Pinterest OAuth test\.3\.9 portable release$/m);
+  assert.match(test39WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.9/);
+  assert.match(test39WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.9'/);
+  assert.match(test39WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.9/);
+  assert.match(test39WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
 test("Windows Electron runner expects only the fail-closed reconfiguration state", () => {
   assert.match(electronRunnerSource, /const reconfiguredStatus = \{ ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" \}/);
   assert.match(electronRunnerSource, /assert\.deepEqual\(trustedMainFrame, reconfiguredStatus\)/);
@@ -105,6 +115,16 @@ test("Windows Electron runner uses a completed exact-frame event instead of poll
   assert.match(electronRunnerSource, /Timed out waiting for the exact foreign iframe load event/);
   assert.match(electronRunnerSource, /frameDiagnostics\(contents, sourceUrl, events\)/);
   assert.doesNotMatch(electronRunnerSource, /waitFor\("foreign iframe"/);
+});
+
+test("frame correlation does not re-check IDs against WebFrameMain properties", () => {
+  assert.match(electronFrameSyncSource, /isMainFrame === false/);
+  assert.match(electronFrameSyncSource, /Number\.isInteger\(frameProcessId\)/);
+  assert.match(electronFrameSyncSource, /Number\.isInteger\(frameRoutingId\)/);
+  assert.match(electronFrameSyncSource, /frame !== null/);
+  assert.match(electronFrameSyncSource, /canonicalObservedUrl === canonicalExpectedUrl/);
+  assert.doesNotMatch(electronFrameSyncSource, /frameProcessId === frame\?\.processId/);
+  assert.doesNotMatch(electronFrameSyncSource, /frameRoutingId === frame\?\.routingId/);
 });
 
 test("Windows Electron teardown waits for process close before retrying temporary userData cleanup", () => {

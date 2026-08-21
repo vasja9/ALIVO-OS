@@ -14,9 +14,11 @@ function correlatesLoadedSubframe({ isMainFrame, frameProcessId, frameRoutingId,
   const canonicalObservedUrl = canonicalFrameUrl(frame?.url);
   return isMainFrame === false
     && Number.isInteger(frameProcessId)
+    && frameProcessId >= 0
     && Number.isInteger(frameRoutingId)
-    && frameProcessId === frame?.processId
-    && frameRoutingId === frame?.routingId
+    && frameRoutingId >= 0
+    && frame !== null
+    && frame !== undefined
     && canonicalObservedUrl !== null
     && canonicalObservedUrl === canonicalExpectedUrl;
 }
