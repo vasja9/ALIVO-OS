@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const {
@@ -13,7 +13,7 @@ const {
   PinterestRuntimeError,
   createPinterestRuntime,
 } = require("../../electron/pinterest-runtime.cjs");
-const { assertTrustedPinterestSender } = require("../../electron/pinterest-ipc-security.cjs");
+const { assertTrustedPinterestSender, isTrustedUiUrl } = require("../../electron/pinterest-ipc-security.cjs");
 const { createPinterestContextResolver } = require("../../electron/pinterest-context.cjs");
 const { createPinterestLifecycle } = require("../../electron/pinterest-lifecycle.cjs");
 const { createPinterestIpcController } = require("../../electron/pinterest-ipc-controller.cjs");
@@ -505,25 +505,70 @@ test("PKCE verifier is sent only in the server-side token exchange", async () =>
 });
 
 test("Pinterest IPC accepts only the trusted local main frame with canonical Windows file paths", () => {
-  const webContents = { mainFrame: undefined };
-  const trustedPath = process.platform === "win32"
-    ? path.win32.resolve("C:\\workspace\\ui\\index.html")
-    : path.resolve("/workspace/ui/index.html");
-  const frame = { url: pathToFileURL(trustedPath).href };
-  webContents.mainFrame = frame;
+  const trustedPath = path.win32.resolve("C:\\workspace\\ui\\index.html");
+  const trustedUrl = pathToFileURL(trustedPath, { windows: true }).href;
+  assert.equal(trustedUrl, "file:///C:/workspace/ui/index.html");
+  assert.equal(new URL(trustedUrl).pathname, "/C:/workspace/ui/index.html");
+  assert.equal(fileURLToPath(trustedUrl, { windows: true }), trustedPath);
+
+  const mainFrame = { frameTreeNodeId: 41, url: trustedUrl };
+  const frame = { frameTreeNodeId: 41, url: trustedUrl };
+  const webContents = { mainFrame };
   const mainWindow = { webContents };
   const allowedPaths = new Set([trustedPath]);
-  assert.doesNotThrow(() => assertTrustedPinterestSender({ sender: webContents, senderFrame: frame }, mainWindow, allowedPaths));
-  assert.throws(() => assertTrustedPinterestSender({ sender: { mainFrame: frame }, senderFrame: frame }, mainWindow, allowedPaths), /Untrusted/);
-  assert.throws(() => assertTrustedPinterestSender({ sender: webContents, senderFrame: { url: pathToFileURL(path.join(path.dirname(trustedPath), "other.html")).href }, }, mainWindow, allowedPaths), /Untrusted/);
-  assert.throws(() => assertTrustedPinterestSender({ sender: webContents, senderFrame: { url: "https://127.0.0.1/ui/index.html" }, }, mainWindow, allowedPaths), /Untrusted/);
-  if (process.platform === "win32") {
-    assert.equal(frame.url, "file:///C:/workspace/ui/index.html");
-    assert.doesNotThrow(() => assertTrustedPinterestSender({
-      sender: webContents,
-      senderFrame: { url: "file:///C:/workspace/ui/index.html" },
-    }, mainWindow, allowedPaths));
+  assert.equal(isTrustedUiUrl(trustedUrl, allowedPaths, "win32"), true);
+  assert.doesNotThrow(() => assertTrustedPinterestSender({ sender: webContents, senderFrame: frame }, mainWindow, allowedPaths, "win32"));
+
+  for (const candidateUrl of [
+    "file:///D:/workspace/ui/index.html",
+    "file://server/share/ui/index.html",
+    "file:///C:/workspace/ui/other.html",
+    "file:///C:/workspace/ui/%69ndex.html",
+    "file:///C:/workspace/ui/%2569ndex.html",
+    "file:///C:/workspace/ui/index.html?unexpected=query",
+    "file:///C:/workspace/ui/index.html#unexpected-hash",
+    "https://127.0.0.1/ui/index.html",
+  ]) {
+    assert.equal(isTrustedUiUrl(candidateUrl, allowedPaths, "win32"), false, candidateUrl);
+    assert.throws(
+      () => assertTrustedPinterestSender(
+        { sender: webContents, senderFrame: { frameTreeNodeId: 41, url: candidateUrl } },
+        mainWindow,
+        allowedPaths,
+        "win32",
+      ),
+      /Untrusted Pinterest IPC frame/,
+      candidateUrl,
+    );
   }
+
+  assert.throws(
+    () => assertTrustedPinterestSender(
+      { sender: webContents, senderFrame: { frameTreeNodeId: 42, url: trustedUrl } },
+      mainWindow,
+      allowedPaths,
+      "win32",
+    ),
+    /Untrusted Pinterest IPC frame/,
+  );
+  assert.throws(
+    () => assertTrustedPinterestSender(
+      { sender: webContents, senderFrame: { url: trustedUrl } },
+      mainWindow,
+      allowedPaths,
+      "win32",
+    ),
+    /Untrusted Pinterest IPC frame/,
+  );
+  assert.throws(
+    () => assertTrustedPinterestSender(
+      { sender: { mainFrame }, senderFrame: frame },
+      mainWindow,
+      allowedPaths,
+      "win32",
+    ),
+    /Untrusted Pinterest IPC sender/,
+  );
 });
 
 test("main-owned Pinterest context rejects renderer attempts to rebind package, credential, or capability", () => {

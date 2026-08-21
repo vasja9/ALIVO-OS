@@ -9,6 +9,7 @@ const makefile = normalizeLineEndings(readFileSync(new URL("../../Makefile", imp
 const replit = normalizeLineEndings(readFileSync(new URL("../../.replit", import.meta.url), "utf8"));
 const attributes = normalizeLineEndings(readFileSync(new URL("../../.gitattributes", import.meta.url), "utf8"));
 const workflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3-windows.yml", import.meta.url), "utf8"));
+const test34WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.4-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 
@@ -38,6 +39,14 @@ test("Windows validation runs DOM tests as ESM and propagates native command fai
   assert.match(harnessSource, /pinterestUiModuleToHarnessScript/);
   assert.match(harnessSource, /Unexpected Pinterest UI ESM import in DOM harness/);
   assert.match(workflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:local-config/);
+});
+
+test("source-only test.3.4 template retains fail-closed Windows validation", () => {
+  assert.match(test34WorkflowTemplate, /^name: Pinterest OAuth test\.3\.4 portable release$/m);
+  assert.match(test34WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.4/);
+  assert.match(test34WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.4'/);
+  assert.match(test34WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.4/);
+  assert.match(test34WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:local-config/);
 });
 
 test("Frozen specification digest remains byte-stable and line-ending fail-closed", () => {
