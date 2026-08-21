@@ -1,0 +1,125 @@
+name: Pinterest OAuth test.3.5 portable release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - pinterest-oauth-test.3.5
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build unsigned Windows x64 portable release
+    runs-on: windows-latest
+    if: github.ref == 'refs/tags/pinterest-oauth-test.3.5'
+    env:
+      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3.5
+      CI: "true"
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify public package sources
+        run: npm run verify:package-sources
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run unit and Pinterest validation gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm run test:pinterest:dom
+          npm run test:pinterest:electron-windows
+          npm run test:pinterest:local-config
+
+      - name: Scan tracked source for private credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nI -E -- '-----BEGIN (RSA|EC|OPENSSH|DSA|PRIVATE) KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}' -- ':!ci/templates/pinterest-oauth-test3.5-windows.yml'; then
+            echo "Potential private credential material found in tracked source."
+            exit 1
+          fi
+
+      - name: Build and verify Electron sources
+        run: |
+          npm run build
+          npm run desktop:smoke
+          node --check electron/pinterest-lifecycle.cjs
+          node --check electron/pinterest-ipc-controller.cjs
+          node --check electron/pinterest-runtime.cjs
+          node --check electron/main.cjs
+          node --check electron/preload.cjs
+          node --check ui/pinterest.js
+          node --check ui/pinterest-connection-state.js
+          python scripts/audit_build0.py
+
+      - name: Verify portable packaging rules
+        run: npm run package:verify
+
+      - name: Build deterministic unsigned portable package
+        shell: bash
+        run: npm run package:portable:windows
+
+      - name: Audit generated archive and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.5-win-x64.zip"
+          $sidecar = Get-Item "release/ALIVO-OS-Pinterest-OAuth-test.3.5-win-x64.zip.sha256"
+          $expected = (Get-Content $sidecar.FullName -Raw).Trim().Split(" ")[0].ToLowerInvariant()
+          $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "Portable ZIP checksum does not match its sidecar" }
+
+          $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3.5-audit"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $auditDirectory -Force
+          $forbidden = Get-ChildItem -LiteralPath $auditDirectory -Recurse -Force | Where-Object {
+            $_.FullName -match '(^|[\\/])(?:tests?|coverage|src|scripts|\.local|\.git|node_modules)(?:[\\/]|$)' -or
+            $_.Name -match '\.map$|^\.env(?:\.|$)|pinterest-local-config\.enc'
+          }
+          if ($forbidden) {
+            throw "Portable ZIP contains forbidden paths: $($forbidden.FullName -join ', ')"
+          }
+          if (-not (Test-Path (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3.5-win-x64/ALIVO OS.exe"))) {
+            throw "Portable ZIP does not contain ALIVO OS.exe"
+          }
+
+      - name: Create or update GitHub pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          if ($tag -ne "pinterest-oauth-test.3.5") {
+            throw "Unexpected release tag: $tag"
+          }
+          $packageSuffix = $tag -replace '^pinterest-oauth-', ''
+          $releaseBase = "ALIVO-OS-Pinterest-OAuth-$packageSuffix-win-x64"
+          gh release view $tag --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag `
+              --repo "$env:GITHUB_REPOSITORY" `
+              --verify-tag `
+              --title "Pinterest OAuth $packageSuffix" `
+              --prerelease `
+              --notes "Unsigned Windows x64 test artifact. Built without Pinterest credentials or repository secrets. The known extract-zip CVE remains a transitive build-tool limitation documented in TECHNICAL_DEBT.md."
+          }
+          gh release upload $tag `
+            "release/$releaseBase.zip" `
+            "release/$releaseBase.zip.sha256" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --clobber

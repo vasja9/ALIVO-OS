@@ -1,11 +1,10 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow } = require("electron");
+const { appendCleanupFailure } = require("./pinterest-electron-teardown.cjs");
 
 const projectRoot = path.resolve(__dirname, "../..");
 const resultPrefix = "PINTEREST_ELECTRON_TEST_RESULT=";
@@ -53,6 +52,34 @@ async function waitForMainFrameLoad(contents) {
   });
 }
 
+async function closeWindowDeterministically(window) {
+  if (window.isDestroyed()) return;
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Timed out closing the ALIVO UI window"));
+    }, 10_000);
+    window.once("closed", finish);
+    window.close();
+    if (window.isDestroyed()) finish();
+  });
+}
+
+async function closeAllWindowsDeterministically() {
+  for (const window of BrowserWindow.getAllWindows()) {
+    await closeWindowDeterministically(window);
+  }
+  await waitFor("all ALIVO UI windows to close", () => BrowserWindow.getAllWindows().length === 0);
+}
+
 async function invokeInFrame(frame, expression) {
   return await frame.executeJavaScript(`Promise.resolve(${expression})`);
 }
@@ -86,12 +113,18 @@ async function verifyNavigationIsBlocked(contents) {
 async function run() {
   if (process.platform !== "win32") throw new Error("Windows Electron integration runner was started outside Windows");
   if (process.env[testEnvironmentFlag] !== "1") throw new Error("Windows Electron integration test flag is required");
+  const temporaryAppData = process.env.ALIVO_PINTEREST_ELECTRON_TEST_USER_DATA;
+  if (!temporaryAppData || !path.win32.isAbsolute(temporaryAppData)) {
+    throw new Error("Windows Electron integration test userData path is required");
+  }
 
-  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "alivo-pinterest-electron-"));
   app.disableHardwareAcceleration();
   app.setPath("appData", temporaryAppData);
   require(path.join(projectRoot, "electron", "main.cjs"));
+  const preventAutomaticQuit = (event) => event.preventDefault();
+  app.on("before-quit", preventAutomaticQuit);
 
+  let scenarioError;
   try {
     await app.whenReady();
     const window = await waitFor("ALIVO BrowserWindow", () => BrowserWindow.getAllWindows()[0]);
@@ -134,18 +167,30 @@ async function run() {
     await verifyNavigationIsBlocked(contents);
     const afterBlockedNavigation = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
     assert.deepEqual(afterBlockedNavigation, { ok: true, state: "AuthenticationRequired" });
+  } catch (error) {
+    scenarioError = error;
   } finally {
-    for (const window of BrowserWindow.getAllWindows()) window.destroy();
-    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+    let teardownError;
+    try {
+      await closeAllWindowsDeterministically();
+    } catch (error) {
+      teardownError = error;
+    } finally {
+      app.removeListener("before-quit", preventAutomaticQuit);
+    }
+    if (scenarioError && teardownError) throw appendCleanupFailure(scenarioError, teardownError);
+    if (teardownError) throw teardownError;
   }
+  if (scenarioError) throw scenarioError;
 }
 
 run()
   .then(() => {
     process.stdout.write(`${resultPrefix}${JSON.stringify({ ok: true })}\n`);
-    app.exit(0);
+    app.quit();
   })
   .catch((error) => {
     process.stderr.write(`${error?.stack || error}\n`);
-    app.exit(1);
+    process.exitCode = 1;
+    app.quit();
   });
