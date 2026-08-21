@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, webFrameMain } = require("electron");
+const { canonicalFrameUrl, correlatesLoadedSubframe } = require("./pinterest-electron-frame-sync.cjs");
 const { appendCleanupFailure } = require("./pinterest-electron-teardown.cjs");
 
 const projectRoot = path.resolve(__dirname, "../..");
@@ -85,13 +86,11 @@ async function invokeInFrame(frame, expression) {
 }
 
 function diagnosticUrl(value) {
-  try {
-    const url = new URL(value);
-    if (url.protocol === "data:") return "data:<redacted>";
-    return `${url.protocol}//${url.host}${url.pathname}`;
-  } catch {
-    return "<invalid-url>";
-  }
+  const canonicalUrl = canonicalFrameUrl(value);
+  if (!canonicalUrl) return "<invalid-url>";
+  const url = new URL(canonicalUrl);
+  if (url.protocol === "data:") return "data:<redacted>";
+  return `${url.protocol}//${url.host}${url.pathname}`;
 }
 
 function frameDiagnostics(contents, expectedUrl, events) {
@@ -110,28 +109,52 @@ function frameDiagnostics(contents, expectedUrl, events) {
 async function addAndFindFrame(contents, sourceUrl) {
   const events = [];
   let settle;
+  let settled = false;
+  let timeout;
   const completed = new Promise((resolve, reject) => { settle = { resolve, reject }; });
   const cleanup = () => {
     clearTimeout(timeout);
     contents.removeListener("did-frame-finish-load", onFrameFinished);
     contents.removeListener("did-fail-load", onFrameFailed);
   };
-  const fail = (message) => {
+  const settleOnce = (error, frame) => {
+    if (settled) return;
+    settled = true;
     cleanup();
-    settle.reject(new Error(`${message}: ${frameDiagnostics(contents, sourceUrl, events)}`));
+    if (error) {
+      settle.reject(new Error(`${error}: ${frameDiagnostics(contents, sourceUrl, events)}`));
+    } else {
+      settle.resolve(frame);
+    }
+  };
+  const fail = (message) => {
+    settleOnce(`${message}`, undefined);
   };
   const onFrameFinished = (_event, isMainFrame, frameProcessId, frameRoutingId) => {
-    const frame = webFrameMain.fromId(frameProcessId, frameRoutingId);
+    let frame;
+    let lookupError;
+    try {
+      frame = webFrameMain.fromId(frameProcessId, frameRoutingId);
+    } catch (error) {
+      lookupError = String(error?.message || error).slice(0, 160);
+    }
+    const correlated = !lookupError && correlatesLoadedSubframe({
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId,
+      frame,
+    }, sourceUrl);
     events.push({
       event: "did-frame-finish-load",
       isMainFrame,
       frameProcessId,
       frameRoutingId,
       url: diagnosticUrl(frame?.url),
+      correlated,
+      ...(lookupError ? { lookupError } : {}),
     });
-    if (isMainFrame || !frame || frame.url !== sourceUrl) return;
-    cleanup();
-    settle.resolve(frame);
+    if (!correlated) return;
+    settleOnce(undefined, frame);
   };
   const onFrameFailed = (_event, code, description, validatedUrl, isMainFrame, frameProcessId, frameRoutingId) => {
     events.push({
@@ -143,11 +166,11 @@ async function addAndFindFrame(contents, sourceUrl) {
       description: String(description).slice(0, 160),
       url: diagnosticUrl(validatedUrl),
     });
-    if (!isMainFrame && validatedUrl === sourceUrl) {
+    if (!isMainFrame && canonicalFrameUrl(validatedUrl) === canonicalFrameUrl(sourceUrl)) {
       fail(`Foreign iframe failed to load (${code} ${String(description).slice(0, 160)})`);
     }
   };
-  const timeout = setTimeout(
+  timeout = setTimeout(
     () => fail("Timed out waiting for the exact foreign iframe load event"),
     10_000,
   );
@@ -164,7 +187,11 @@ async function addAndFindFrame(contents, sourceUrl) {
         return { id: frame.id, src: frame.src };
       })()
     `);
-    if (!created || created.id !== "pinterest-ipc-integration-frame" || created.src !== sourceUrl) {
+    if (
+      !created ||
+      created.id !== "pinterest-ipc-integration-frame" ||
+      canonicalFrameUrl(created.src) !== canonicalFrameUrl(sourceUrl)
+    ) {
       fail("Foreign iframe creation did not retain the requested URL");
     }
   } catch (error) {
