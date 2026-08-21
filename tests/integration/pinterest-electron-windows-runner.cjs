@@ -1,0 +1,151 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const { app, BrowserWindow } = require("electron");
+
+const projectRoot = path.resolve(__dirname, "../..");
+const resultPrefix = "PINTEREST_ELECTRON_TEST_RESULT=";
+const testEnvironmentFlag = "ALIVO_PINTEREST_ELECTRON_INTEGRATION_TEST";
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitFor(description, predicate, timeoutMilliseconds = 10_000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const value = predicate();
+    if (value) return value;
+    await sleep(25);
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
+async function waitForMainFrameLoad(contents) {
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const fail = (_event, code, description, url) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(new Error(`ALIVO UI failed to load (${code} ${description} ${url})`));
+    };
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Timed out loading the ALIVO UI"));
+    }, 10_000);
+    contents.once("did-finish-load", finish);
+    contents.once("did-fail-load", (_event, code, description, url) => {
+      fail(_event, code, description, url);
+    });
+    if (!contents.isLoadingMainFrame()) finish();
+  });
+}
+
+async function invokeInFrame(frame, expression) {
+  return await frame.executeJavaScript(`Promise.resolve(${expression})`);
+}
+
+async function addAndFindFrame(contents, sourceUrl) {
+  await contents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const frame = document.createElement("iframe");
+      frame.id = "pinterest-ipc-integration-frame";
+      frame.src = ${JSON.stringify(sourceUrl)};
+      frame.onload = () => resolve();
+      frame.onerror = () => reject(new Error("iframe failed to load"));
+      document.body.append(frame);
+    })
+  `);
+  return await waitFor("foreign iframe", () =>
+    contents.mainFrame.frames.find((frame) => frame.url === sourceUrl),
+  );
+}
+
+async function verifyNavigationIsBlocked(contents) {
+  const originalUrl = contents.getURL();
+  const attemptedUrl = "https://foreign-pinterest-frame.invalid/";
+  const navigation = new Promise((resolve) => contents.once("will-navigate", (_event, url) => resolve(url)));
+  await contents.executeJavaScript(`window.location.assign(${JSON.stringify(attemptedUrl)})`);
+  assert.equal(await navigation, attemptedUrl);
+  await sleep(50);
+  assert.equal(contents.getURL(), originalUrl);
+}
+
+async function run() {
+  if (process.platform !== "win32") throw new Error("Windows Electron integration runner was started outside Windows");
+  if (process.env[testEnvironmentFlag] !== "1") throw new Error("Windows Electron integration test flag is required");
+
+  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "alivo-pinterest-electron-"));
+  app.disableHardwareAcceleration();
+  app.setPath("appData", temporaryAppData);
+  require(path.join(projectRoot, "electron", "main.cjs"));
+
+  try {
+    await app.whenReady();
+    const window = await waitFor("ALIVO BrowserWindow", () => BrowserWindow.getAllWindows()[0]);
+    const contents = window.webContents;
+    await waitForMainFrameLoad(contents);
+
+    const configured = await invokeInFrame(
+      contents.mainFrame,
+      `window.alivoPinterestLocalConfig.save({
+        clientId: "integration-test-client",
+        clientSecret: "integration-test-secret",
+        redirectUri: "http://localhost:48123/pinterest/oauth/callback",
+      })`,
+    );
+    assert.equal(configured.ok, true);
+
+    const trustedMainFrame = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
+    assert.deepEqual(trustedMainFrame, { ok: true, state: "AuthenticationRequired" });
+
+    const trustedLocalIframe = await addAndFindFrame(
+      contents,
+      pathToFileURL(path.join(projectRoot, "ui", "index.html")).href,
+    );
+    const trustedLocalIframeResult = await invokeInFrame(trustedLocalIframe, "window.alivoPinterest.connectionStatus()");
+    assert.deepEqual(
+      trustedLocalIframeResult,
+      { ok: false, code: "PINTEREST_STATUS_UNAVAILABLE", state: "AuthenticationRequired", message: "Pinterest connection status is unavailable" },
+    );
+
+    const dataIframe = await addAndFindFrame(
+      contents,
+      "data:text/html,%3C!doctype%20html%3E%3Ctitle%3Eforeign%3C/title%3E",
+    );
+    const dataIframeResult = await invokeInFrame(dataIframe, "window.alivoPinterest.connectionStatus()");
+    assert.deepEqual(
+      dataIframeResult,
+      { ok: false, code: "PINTEREST_STATUS_UNAVAILABLE", state: "AuthenticationRequired", message: "Pinterest connection status is unavailable" },
+    );
+
+    await verifyNavigationIsBlocked(contents);
+    const afterBlockedNavigation = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
+    assert.deepEqual(afterBlockedNavigation, { ok: true, state: "AuthenticationRequired" });
+  } finally {
+    for (const window of BrowserWindow.getAllWindows()) window.destroy();
+    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+  }
+}
+
+run()
+  .then(() => {
+    process.stdout.write(`${resultPrefix}${JSON.stringify({ ok: true })}\n`);
+    app.exit(0);
+  })
+  .catch((error) => {
+    process.stderr.write(`${error?.stack || error}\n`);
+    app.exit(1);
+  });

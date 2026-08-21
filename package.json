@@ -10,6 +10,7 @@
     "build:electron-runtime": "node scripts/build-electron-runtime.mjs",
     "verify:package-sources": "node scripts/verify-public-package-sources.mjs",
     "test:pinterest:dom": "node --experimental-transform-types --test tests/unit/PinterestDomIntegration.test.ts",
+    "test:pinterest:electron-windows": "node --experimental-transform-types --test tests/integration/PinterestElectronWindows.test.ts",
     "test:pinterest:local-config": "node --experimental-transform-types --test tests/unit/PinterestLocalVault.test.ts tests/unit/PinterestLocalConfigBoundary.test.ts",
     "test": "node --experimental-transform-types --test tests/unit/*.test.ts",
     "desktop:smoke": "node --check ui/shell.js && node --check electron/main.cjs",

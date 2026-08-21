@@ -12,6 +12,7 @@ const workflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/tem
 const test34WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.4-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
+const electronMainSource = normalizeLineEndings(readFileSync(new URL("../../electron/main.cjs", import.meta.url), "utf8"));
 
 test("Pinterest DOM integration has a direct Node transform gate", () => {
   assert.equal(
@@ -46,7 +47,12 @@ test("source-only test.3.4 template retains fail-closed Windows validation", () 
   assert.match(test34WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.4/);
   assert.match(test34WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.4'/);
   assert.match(test34WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.4/);
-  assert.match(test34WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:local-config/);
+  assert.match(test34WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
+test("Electron iframe test mode cannot be enabled in a packaged application", () => {
+  assert.match(electronMainSource, /!app\.isPackaged && process\.env\.ALIVO_PINTEREST_ELECTRON_INTEGRATION_TEST === "1"/);
+  assert.match(electronMainSource, /ipcMain\.handle\("onboarding:complete", async \(_event\) => \{ assertTrustedPinterestSender\(_event, mainWindow, trustedUiPaths\)/);
 });
 
 test("Frozen specification digest remains byte-stable and line-ending fail-closed", () => {

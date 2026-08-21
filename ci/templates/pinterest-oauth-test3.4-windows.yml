@@ -42,6 +42,7 @@ jobs:
           set -euo pipefail
           npm test
           npm run test:pinterest:dom
+          npm run test:pinterest:electron-windows
           npm run test:pinterest:local-config
 
       - name: Scan tracked source for private credentials

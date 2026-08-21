@@ -15,13 +15,14 @@ const { createPinterestIpcController } = require("./pinterest-ipc-controller.cjs
 configurePersistentDataPath(app);
 const onboardingFile = () => path.join(app.getPath("userData"), "state", "onboarding.json");
 async function isInitialized() { try { const state = JSON.parse(await fs.readFile(onboardingFile(), "utf8")); return state.schemaVersion === 1 && state.completed === true; } catch { return false; } }
-ipcMain.handle("onboarding:complete", async () => { const target = onboardingFile(), temporary = `${target}.tmp`; await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(temporary, JSON.stringify({ schemaVersion: 1, completed: true, completedAt: new Date().toISOString() }), { mode: 0o600 }); await fs.rename(temporary, target); return true; });
 let pinterestLocalVault;
 let pinterestLifecycle;
 let pinterestIpcController;
 let mainWindow;
 const trustedUiPaths = new Set([path.resolve(__dirname, "../ui/index.html"), path.resolve(__dirname, "../ui/onboarding.html")]);
+const enablePinterestIpcIntegrationTestFrames = !app.isPackaged && process.env.ALIVO_PINTEREST_ELECTRON_INTEGRATION_TEST === "1";
 const pinterestContext = createPinterestContextResolver();
+ipcMain.handle("onboarding:complete", async (_event) => { assertTrustedPinterestSender(_event, mainWindow, trustedUiPaths); const target = onboardingFile(), temporary = `${target}.tmp`; await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(temporary, JSON.stringify({ schemaVersion: 1, completed: true, completedAt: new Date().toISOString() }), { mode: 0o600 }); await fs.rename(temporary, target); return true; });
 function getPinterestLocalVault() {
   if (!pinterestLocalVault) {
     pinterestLocalVault = createPinterestLocalVault({
@@ -134,7 +135,7 @@ ipcMain.handle("pinterest:local-config:clear", async (_event) => {
 });
 app.whenReady().then(async () => {
   const initialized = await isInitialized();
-  mainWindow = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
+  mainWindow = new BrowserWindow({ title: "ALIVO OS", width: 1280, height: 800, minWidth: 760, minHeight: 600, backgroundColor: "#9c1c31", webPreferences: { contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: enablePinterestIpcIntegrationTestFrames, sandbox: true, preload: path.join(__dirname, "preload.cjs") } });
   mainWindow.webContents.on("will-navigate", (event, url) => { if (!isTrustedUiUrl(url, trustedUiPaths)) event.preventDefault(); });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   await mainWindow.loadFile(path.join(__dirname, `../ui/${initialized ? "index.html" : "onboarding.html"}`));
