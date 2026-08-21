@@ -1,0 +1,1 @@
+- [GitHub branch publishing](github-branch-publishing.md) — Git transport can lack usable auth even when the GitHub connector is active; use the connector’s Git Data API with a ref precondition.
