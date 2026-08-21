@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, webFrameMain } = require("electron");
 const { appendCleanupFailure } = require("./pinterest-electron-teardown.cjs");
 
 const projectRoot = path.resolve(__dirname, "../..");
@@ -84,20 +84,93 @@ async function invokeInFrame(frame, expression) {
   return await frame.executeJavaScript(`Promise.resolve(${expression})`);
 }
 
+function diagnosticUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "data:") return "data:<redacted>";
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
+function frameDiagnostics(contents, expectedUrl, events) {
+  return JSON.stringify({
+    expectedUrl: diagnosticUrl(expectedUrl),
+    mainFrameUrl: diagnosticUrl(contents.getURL()),
+    frames: [contents.mainFrame, ...contents.mainFrame.frames].map((frame) => ({
+      url: diagnosticUrl(frame.url),
+      processId: frame.processId,
+      routingId: frame.routingId,
+    })),
+    events,
+  });
+}
+
 async function addAndFindFrame(contents, sourceUrl) {
-  await contents.executeJavaScript(`
-    new Promise((resolve, reject) => {
-      const frame = document.createElement("iframe");
-      frame.id = "pinterest-ipc-integration-frame";
-      frame.src = ${JSON.stringify(sourceUrl)};
-      frame.onload = () => resolve();
-      frame.onerror = () => reject(new Error("iframe failed to load"));
-      document.body.append(frame);
-    })
-  `);
-  return await waitFor("foreign iframe", () =>
-    contents.mainFrame.frames.find((frame) => frame.url === sourceUrl),
+  const events = [];
+  let settle;
+  const completed = new Promise((resolve, reject) => { settle = { resolve, reject }; });
+  const cleanup = () => {
+    clearTimeout(timeout);
+    contents.removeListener("did-frame-finish-load", onFrameFinished);
+    contents.removeListener("did-fail-load", onFrameFailed);
+  };
+  const fail = (message) => {
+    cleanup();
+    settle.reject(new Error(`${message}: ${frameDiagnostics(contents, sourceUrl, events)}`));
+  };
+  const onFrameFinished = (_event, isMainFrame, frameProcessId, frameRoutingId) => {
+    const frame = webFrameMain.fromId(frameProcessId, frameRoutingId);
+    events.push({
+      event: "did-frame-finish-load",
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId,
+      url: diagnosticUrl(frame?.url),
+    });
+    if (isMainFrame || !frame || frame.url !== sourceUrl) return;
+    cleanup();
+    settle.resolve(frame);
+  };
+  const onFrameFailed = (_event, code, description, validatedUrl, isMainFrame, frameProcessId, frameRoutingId) => {
+    events.push({
+      event: "did-fail-load",
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId,
+      code,
+      description: String(description).slice(0, 160),
+      url: diagnosticUrl(validatedUrl),
+    });
+    if (!isMainFrame && validatedUrl === sourceUrl) {
+      fail(`Foreign iframe failed to load (${code} ${String(description).slice(0, 160)})`);
+    }
+  };
+  const timeout = setTimeout(
+    () => fail("Timed out waiting for the exact foreign iframe load event"),
+    10_000,
   );
+
+  contents.on("did-frame-finish-load", onFrameFinished);
+  contents.on("did-fail-load", onFrameFailed);
+  try {
+    const created = await contents.executeJavaScript(`
+      (() => {
+        const frame = document.createElement("iframe");
+        frame.id = "pinterest-ipc-integration-frame";
+        frame.src = ${JSON.stringify(sourceUrl)};
+        document.body.append(frame);
+        return { id: frame.id, src: frame.src };
+      })()
+    `);
+    if (!created || created.id !== "pinterest-ipc-integration-frame" || created.src !== sourceUrl) {
+      fail("Foreign iframe creation did not retain the requested URL");
+    }
+  } catch (error) {
+    fail(`Foreign iframe creation failed (${String(error?.message || error).slice(0, 160)})`);
+  }
+  return await completed;
 }
 
 async function verifyNavigationIsBlocked(contents) {

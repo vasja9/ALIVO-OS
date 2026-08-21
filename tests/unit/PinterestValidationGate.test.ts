@@ -12,6 +12,7 @@ const workflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/tem
 const test34WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.4-windows.yml", import.meta.url), "utf8"));
 const test35WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.5-windows.yml", import.meta.url), "utf8"));
 const test36WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.6-windows.yml", import.meta.url), "utf8"));
+const test37WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.7-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 const electronMainSource = normalizeLineEndings(readFileSync(new URL("../../electron/main.cjs", import.meta.url), "utf8"));
@@ -70,11 +71,29 @@ test("source-only test.3.6 template retains fail-closed Windows validation", () 
   assert.match(test36WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
 });
 
+test("source-only test.3.7 template retains fail-closed Windows validation", () => {
+  assert.match(test37WorkflowTemplate, /^name: Pinterest OAuth test\.3\.7 portable release$/m);
+  assert.match(test37WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.7/);
+  assert.match(test37WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.7'/);
+  assert.match(test37WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.7/);
+  assert.match(test37WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
 test("Windows Electron runner expects only the fail-closed reconfiguration state", () => {
   assert.match(electronRunnerSource, /const reconfiguredStatus = \{ ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" \}/);
   assert.match(electronRunnerSource, /assert\.deepEqual\(trustedMainFrame, reconfiguredStatus\)/);
   assert.match(electronRunnerSource, /assert\.deepEqual\(afterBlockedNavigation, reconfiguredStatus\)/);
   assert.doesNotMatch(electronRunnerSource, /trustedMainFrame, \{ ok: true, state: "AuthenticationRequired" \}/);
+});
+
+test("Windows Electron runner uses a completed exact-frame event instead of polling frame lists", () => {
+  assert.match(electronRunnerSource, /const \{ app, BrowserWindow, webFrameMain \} = require\("electron"\)/);
+  assert.match(electronRunnerSource, /contents\.on\("did-frame-finish-load", onFrameFinished\)/);
+  assert.match(electronRunnerSource, /const frame = webFrameMain\.fromId\(frameProcessId, frameRoutingId\)/);
+  assert.match(electronRunnerSource, /if \(isMainFrame \|\| !frame \|\| frame\.url !== sourceUrl\) return/);
+  assert.match(electronRunnerSource, /Timed out waiting for the exact foreign iframe load event/);
+  assert.match(electronRunnerSource, /frameDiagnostics\(contents, sourceUrl, events\)/);
+  assert.doesNotMatch(electronRunnerSource, /waitFor\("foreign iframe"/);
 });
 
 test("Windows Electron teardown waits for process close before retrying temporary userData cleanup", () => {
