@@ -11,6 +11,7 @@ const attributes = normalizeLineEndings(readFileSync(new URL("../../.gitattribut
 const workflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3-windows.yml", import.meta.url), "utf8"));
 const test34WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.4-windows.yml", import.meta.url), "utf8"));
 const test35WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.5-windows.yml", import.meta.url), "utf8"));
+const test36WorkflowTemplate = normalizeLineEndings(readFileSync(new URL("../../ci/templates/pinterest-oauth-test3.6-windows.yml", import.meta.url), "utf8"));
 const auditSource = normalizeLineEndings(readFileSync(new URL("../../scripts/audit_build0.py", import.meta.url), "utf8"));
 const harnessSource = normalizeLineEndings(readFileSync(new URL("../harness/PinterestDomHarness.js", import.meta.url), "utf8"));
 const electronMainSource = normalizeLineEndings(readFileSync(new URL("../../electron/main.cjs", import.meta.url), "utf8"));
@@ -59,6 +60,21 @@ test("source-only test.3.5 template retains fail-closed Windows validation", () 
   assert.match(test35WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.5'/);
   assert.match(test35WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.5/);
   assert.match(test35WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
+test("source-only test.3.6 template retains fail-closed Windows validation", () => {
+  assert.match(test36WorkflowTemplate, /^name: Pinterest OAuth test\.3\.6 portable release$/m);
+  assert.match(test36WorkflowTemplate, /tags:\n\s+- pinterest-oauth-test\.3\.6/);
+  assert.match(test36WorkflowTemplate, /if: github\.ref == 'refs\/tags\/pinterest-oauth-test\.3\.6'/);
+  assert.match(test36WorkflowTemplate, /ALIVO_PORTABLE_PACKAGE_SUFFIX: test\.3\.6/);
+  assert.match(test36WorkflowTemplate, /- name: Run unit and Pinterest validation gates[\s\S]*?shell: bash[\s\S]*?set -euo pipefail[\s\S]*?npm test[\s\S]*?npm run test:pinterest:dom[\s\S]*?npm run test:pinterest:electron-windows[\s\S]*?npm run test:pinterest:local-config/);
+});
+
+test("Windows Electron runner expects only the fail-closed reconfiguration state", () => {
+  assert.match(electronRunnerSource, /const reconfiguredStatus = \{ ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" \}/);
+  assert.match(electronRunnerSource, /assert\.deepEqual\(trustedMainFrame, reconfiguredStatus\)/);
+  assert.match(electronRunnerSource, /assert\.deepEqual\(afterBlockedNavigation, reconfiguredStatus\)/);
+  assert.doesNotMatch(electronRunnerSource, /trustedMainFrame, \{ ok: true, state: "AuthenticationRequired" \}/);
 });
 
 test("Windows Electron teardown waits for process close before retrying temporary userData cleanup", () => {

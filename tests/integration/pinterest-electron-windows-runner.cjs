@@ -141,8 +141,9 @@ async function run() {
     );
     assert.equal(configured.ok, true);
 
+    const reconfiguredStatus = { ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" };
     const trustedMainFrame = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
-    assert.deepEqual(trustedMainFrame, { ok: true, state: "AuthenticationRequired" });
+    assert.deepEqual(trustedMainFrame, reconfiguredStatus);
 
     const trustedLocalIframe = await addAndFindFrame(
       contents,
@@ -166,7 +167,7 @@ async function run() {
 
     await verifyNavigationIsBlocked(contents);
     const afterBlockedNavigation = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
-    assert.deepEqual(afterBlockedNavigation, { ok: true, state: "AuthenticationRequired" });
+    assert.deepEqual(afterBlockedNavigation, reconfiguredStatus);
   } catch (error) {
     scenarioError = error;
   } finally {
