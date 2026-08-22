@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { COMPLETE_JPEG_BASE64, COMPLETE_PNG_BASE64, COMPLETE_WEBP_BASE64 } from "../fixtures/PinterestThumbnailFixtures.ts";
 import { readFileSync } from "node:fs";
 import { hasPinterestContract, actionAllowed, createPinterestUiState, PINTEREST_UI_STATE, safeObservation, transition } from "../../ui/pinterest-connection-state.js";
 
 const source = readFileSync(new URL("../../ui/pinterest.js", import.meta.url), "utf8");
+const stateSource = readFileSync(new URL("../../ui/pinterest-connection-state.js", import.meta.url), "utf8");
 
 test("Pinterest UI uses only the new preload contract and rejects an incomplete preload", () => {
   assert.equal(hasPinterestContract(undefined), false);
@@ -106,8 +108,23 @@ test("Pinterest UI redacts sensitive provider fields and never exposes them in r
 
 test("Pinterest UI accepts only board names and omits ownership and board IDs from safe Pin state",()=>{
   const safe=safeObservation({pins:[{pinId:"pin-1",boardName:"Named board",boardReference:"123456",ownership:"OwnedAuthorizedResource",accessToken:"secret"}]});
-  assert.deepEqual(safe.pins,[{pinId:"pin-1",boardName:"Named board"}]);
+  assert.deepEqual(safe.pins,[{pinId:"pin-1",boardName:"Named board",thumbnail:null}]);
   assert.equal(/123456|ownership|accessToken|secret/i.test(JSON.stringify(safe)),false);
+});
+
+test("Pinterest UI thumbnail boundary accepts only bounded image DTO data",()=>{
+  const jpeg=COMPLETE_JPEG_BASE64;
+  const safe=safeObservation({pins:[{pinId:"pin-1",boardName:"Board",thumbnail:{mimeType:"image/jpeg",base64:jpeg,url:"https://i.pinimg.com/private.jpg",headers:{Cookie:"secret"}},thumbnailUrl:"https://i.pinimg.com/private.jpg",media:{raw:true}}]});
+  assert.deepEqual(safe.pins,[{pinId:"pin-1",boardName:"Board",thumbnail:{mimeType:"image/jpeg",base64:jpeg}}]);
+  assert.equal(/pinimg|private|cookie|thumbnailUrl|media|raw/i.test(JSON.stringify(safe)),false);
+  assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/svg+xml",base64:jpeg}}]}).pins[0].thumbnail,null);
+  assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/jpeg",base64:"A".repeat(400000)}}]}).pins[0].thumbnail,null);
+  assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/jpeg",base64:jpeg.slice(0,-4)}}]}).pins[0].thumbnail,null);
+  assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/png",base64:COMPLETE_PNG_BASE64.slice(0,-16)}}]}).pins[0].thumbnail,null);
+  assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/webp",base64:COMPLETE_WEBP_BASE64.slice(0,-4)}}]}).pins[0].thumbnail,null);
+  assert.equal(safe.pins[0].thumbnail.base64.length,976);
+  assert.match(stateSource,/return Object\.freeze\(\{ \.\.\.envelope, pins: Object\.freeze\(pins\) \}\)/);
+  assert.doesNotMatch(stateSource,/base64\.(?:trim|slice)|text\(thumbnail\.base64\)|slice\(0,\s*240\).*base64/);
 });
 
 test("Pinterest UI preserves a verified connection when observation data is unavailable", () => {

@@ -37,6 +37,23 @@ const SAFE_MESSAGES = Object.freeze({
 });
 
 const text = (value, fallback = "") => typeof value === "string" && value.trim() ? value.trim().slice(0, 240) : fallback;
+const THUMBNAIL_MAX_BYTES = 256 * 1024;
+const THUMBNAIL_MAX_BASE64_LENGTH = Math.ceil(THUMBNAIL_MAX_BYTES / 3) * 4;
+function safeThumbnail(value) {
+  if (!value || typeof value !== "object" || !["image/jpeg", "image/png", "image/webp"].includes(value.mimeType) || typeof value.base64 !== "string" || !value.base64.length || value.base64.length > THUMBNAIL_MAX_BASE64_LENGTH || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.base64)) return null;
+  try {
+    const binary = globalThis.atob(value.base64);
+    if (!binary.length || binary.length > THUMBNAIL_MAX_BYTES || globalThis.btoa(binary) !== value.base64) return null;
+    const byte = index => binary.charCodeAt(index < 0 ? binary.length + index : index);
+    const ascii = (start, length) => Array.from({ length }, (_, index) => String.fromCharCode(byte(start + index))).join("");
+    const jpeg = value.mimeType === "image/jpeg" && binary.length >= 4 && byte(0) === 0xff && byte(1) === 0xd8 && byte(2) === 0xff && byte(-2) === 0xff && byte(-1) === 0xd9;
+    const pngEnd = [0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82];
+    const png = value.mimeType === "image/png" && binary.length >= 20 && [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((item,index)=>byte(index)===item) && pngEnd.every((item,index)=>byte(binary.length-12+index)===item);
+    const riffSize = byte(4) | byte(5) << 8 | byte(6) << 16 | byte(7) << 24;
+    const webp = value.mimeType === "image/webp" && binary.length >= 12 && ascii(0,4) === "RIFF" && ascii(8,4) === "WEBP" && (riffSize >>> 0) + 8 === binary.length;
+    return jpeg || png || webp ? Object.freeze({ mimeType: value.mimeType, base64: value.base64 }) : null;
+  } catch { return null; }
+}
 const codeOf = value => text(value?.code || value?.failure || value?.state);
 const hasCapabilityState = (value, states) => Array.isArray(value?.capabilities)
   && value.capabilities.some(capability => states.has(capability?.state));
@@ -167,19 +184,20 @@ export function safeObservation(value) {
   if (!value || typeof value !== "object") return Object.freeze({ pins: Object.freeze([]) });
   const pins = Array.isArray(value.pins) ? value.pins.slice(0, 25).flatMap(pin => {
     if (!pin || typeof pin !== "object" || typeof pin.pinId !== "string" || !pin.pinId.trim()) return [];
-    const safe = { pinId: text(pin.pinId).slice(0, 128), boardName: typeof pin.boardName === "string" && pin.boardName.trim() ? text(pin.boardName).slice(0, 160) : "Unknown board" };
+    const safe = { pinId: text(pin.pinId).slice(0, 128), boardName: typeof pin.boardName === "string" && pin.boardName.trim() ? text(pin.boardName).slice(0, 160) : "Unknown board", thumbnail: null };
     for (const [key, maximum] of [["title", 160], ["description", 500], ["createdAt", 32], ["destinationDomain", 253]]) {
       if (typeof pin[key] === "string" && pin[key].trim()) safe[key] = text(pin[key]).slice(0, maximum);
     }
+    safe.thumbnail = safeThumbnail(pin.thumbnail);
     return [Object.freeze(safe)];
   }) : [];
-  return redact({
+  const envelope = redact({
     state: value.state,
     status: value.status,
     summary: value.summary,
     warningCount: Array.isArray(value.warnings) ? Math.min(value.warnings.length, 25) : 0,
     failureCount: Array.isArray(value.failures) ? Math.min(value.failures.length, 25) : 0,
     provenance: value.provenance,
-    pins: Object.freeze(pins),
   });
+  return Object.freeze({ ...envelope, pins: Object.freeze(pins) });
 }

@@ -15,6 +15,8 @@ import { PinterestObservationWorkflowRepository } from "./PinterestObservationWo
 import { PinterestObservationWorkflow } from "./PinterestObservationWorkflow.ts";
 import { registerPinterestProductionProvider } from "./PinterestProductionProviderRegistration.ts";
 import type { PinterestProductionProviderRegistration } from "./PinterestProductionProviderRegistration.ts";
+import { PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES, fetchPinterestThumbnail, fetchPinterestThumbnails, safeThumbnailDto, selectPinterestThumbnail } from "./PinterestThumbnailSecurity.ts";
+import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./PinterestThumbnailSecurity.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
 const APPROVED_CAPABILITIES = Object.freeze(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"].map((value) => new MarketSourceCapability(value)));
@@ -48,6 +50,7 @@ export interface PinterestRendererSafePin {
   readonly createdAt?:string;
   readonly boardName:string;
   readonly destinationDomain?:string;
+  readonly thumbnail:PinterestSafeThumbnail|null;
 }
 
 const canonicalPayload=(observation:{payloadReference:string}):Record<string,unknown>|undefined=>{try{const parsed=JSON.parse(observation.payloadReference);return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:undefined;}catch{return undefined;}};
@@ -62,9 +65,22 @@ export function rendererSafePins(observations:readonly {type:string;observedAt:D
     const pinId=optionalText(canonical.resourceId,128);if(!pinId)continue;
     const observedAt=observation.observedAt instanceof Date&&Number.isFinite(observation.observedAt.getTime())?observation.observedAt.toISOString():undefined;
     const title=optionalText(canonical.title,160),description=optionalText(canonical.description,500),boardId=optionalText(canonical.boardReference,128),domain=destinationDomain(canonical.link);
-    pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(observedAt&&{createdAt:observedAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain})}));
+    pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(observedAt&&{createdAt:observedAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain}),thumbnail:null}));
   }
   return Object.freeze(pins.sort((left,right)=>(right.createdAt??"").localeCompare(left.createdAt??"")||left.pinId.localeCompare(right.pinId)).slice(0,25));
+}
+
+export async function mergePinThumbnails(pins:readonly PinterestRendererSafePin[],mediaByPin:ReadonlyMap<string,unknown>,previous:readonly PinterestRendererSafePin[],fetcher:(source:PinterestThumbnailSource)=>Promise<PinterestSafeThumbnail|null>=fetchPinterestThumbnail):Promise<readonly PinterestRendererSafePin[]> {
+  const prior=new Map(previous.map(pin=>[pin.pinId,safeThumbnailDto(pin.thumbnail)]));
+  const fetched=await fetchPinterestThumbnails(pins,pin=>prior.get(pin.pinId)?undefined:selectPinterestThumbnail(mediaByPin.get(pin.pinId)),fetcher);
+  let total=0;
+  return Object.freeze(pins.map((pin,index)=>{
+    const thumbnail=safeThumbnailDto(prior.get(pin.pinId)??fetched[index]);
+    const bytes=thumbnail?Buffer.from(thumbnail.base64,"base64").length:0;
+    const accepted=thumbnail&&total+bytes<=PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES?thumbnail:null;
+    total+=accepted?bytes:0;
+    return Object.freeze({...pin,thumbnail:accepted});
+  }));
 }
 
 export interface PinterestElectronCompositionRequest {
@@ -73,6 +89,7 @@ export interface PinterestElectronCompositionRequest {
   readonly businessPackageId:string;
   readonly apiBaseUrl:string;
   readonly clock?:() => Date;
+  readonly thumbnailFetcher?:(source:PinterestThumbnailSource)=>Promise<PinterestSafeThumbnail|null>;
 }
 
 export function createPinterestElectronComposition(request:PinterestElectronCompositionRequest) {
@@ -223,7 +240,10 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
       if (!(result instanceof PinterestObservationWorkflowResult)) return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined, pins: pinSnapshot };
       const ids=boardIds(result.acceptedObservations);if(ids.length)await resolveBoardNames(ids,context.correlationIdentifier);
       const normalizedPins=rendererSafePins(result.acceptedObservations,boardLookup);
-      if(normalizedPins.length>0||result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0)pinSnapshot=normalizedPins;
+      if(normalizedPins.length>0){
+        const mediaByPin=new Map<string,unknown>();for(const observation of result.acceptedObservations){const canonical=canonicalPayload(observation),id=optionalText(canonical?.resourceId,128);if(id)mediaByPin.set(id,canonical?.media);}
+        pinSnapshot=await mergePinThumbnails(normalizedPins,mediaByPin,pinSnapshot,request.thumbnailFetcher??fetchPinterestThumbnail);
+      }else if(result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0)pinSnapshot=normalizedPins;
       return {
         state: result.finalState,
         summary: result.summary.properties,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createPinterestDomHarness, pinterestUiModuleToHarnessScript, sequence } from "../harness/PinterestDomHarness.js";
+import { COMPLETE_JPEG_BASE64 } from "../fixtures/PinterestThumbnailFixtures.ts";
 
 const authenticationRequired = { ok: true, state: "AuthenticationRequired" };
 const authenticated = { ok: true, state: "Authenticated" };
@@ -264,6 +265,7 @@ test("All Pins renders safe DTO values as text and exposes empty and unavailable
   assert.equal(harness.hasText(maliciousTitle), true);
   assert.equal(harness.hasText("<script>bad()</script>"), true);
   assert.equal(harness.hasText("Datum: 23.08.26 · Board: " + maliciousBoard + " · Destination: example.test"), true);
+  assert.equal(harness.document.querySelector(".pin-metadata").textContent,"Datum: 23.08.26 · Board: " + maliciousBoard + " · Destination: example.test");
   assert.equal(harness.hasText("Unknown board"), true);
   assert.equal(harness.hasText("Invalid Date"), false);
   assert.equal(harness.hasText("board-1"), false);
@@ -281,4 +283,15 @@ test("All Pins renders safe DTO values as text and exposes empty and unavailable
   await empty.clickAction("verify");
   await empty.clickAction("observe");
   assert.equal(empty.hasText("completed successfully with no Pins"), true);
+});
+
+test("All Pins creates only validated data images and neutral placeholders",async()=>{
+  const jpeg=COMPLETE_JPEG_BASE64;
+  const malicious='<img src="https://evil.example/steal">';
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:async()=>({ok:true,state:"Completed",pins:[{pinId:"pin-1",title:malicious,boardName:"Board",thumbnail:{mimeType:"image/jpeg",base64:jpeg,url:"https://i.pinimg.com/private.jpg"}},{pinId:"pin-2",boardName:"Board",thumbnail:null}]})})).start();
+  await harness.clickAction("verify");await harness.clickAction("observe");harness.document.querySelector('[data-pin-view="all"]').click();await harness.settle();
+  const images=harness.document.querySelectorAll(".pin-thumbnail-image");
+  assert.equal(images.length,1);assert.equal(images[0].src,`data:image/jpeg;base64,${jpeg}`);assert.ok(images[0].src.length>263);assert.equal(images[0].src.slice(23),jpeg);assert.equal(images[0].loading,"lazy");assert.equal(images[0].decoding,"async");assert.equal(images[0].alt,malicious);
+  assert.equal(harness.document.querySelectorAll(".pin-thumbnail-placeholder").length,1);assert.equal(harness.hasText("No image"),true);assert.equal(harness.hasText(malicious),true);
+  assert.equal(images.some(image=>String(image.src).includes("pinimg.com")),false);assert.equal(harness.document.querySelectorAll("a").length,0);
 });

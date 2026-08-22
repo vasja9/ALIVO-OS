@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { COMPLETE_JPEG_BASE64, COMPLETE_PNG_BASE64, COMPLETE_WEBP_BASE64 } from "../fixtures/PinterestThumbnailFixtures.ts";
 
 const require = createRequire(import.meta.url);
 const {
@@ -17,7 +18,7 @@ const { assertTrustedPinterestSender, isTrustedUiUrl } = require("../../electron
 const { createPinterestContextResolver } = require("../../electron/pinterest-context.cjs");
 const { createPinterestLifecycle } = require("../../electron/pinterest-lifecycle.cjs");
 const { createPinterestIpcController } = require("../../electron/pinterest-ipc-controller.cjs");
-const { transition, createPinterestUiState, PINTEREST_UI_STATE } = await import("../../ui/pinterest-connection-state.js");
+const { transition, createPinterestUiState, PINTEREST_UI_STATE, safeObservation } = await import("../../ui/pinterest-connection-state.js");
 const { createPinterestElectronComposition, rendererSafePins } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
@@ -594,6 +595,8 @@ test("main-owned Pinterest context rejects renderer attempts to rebind package, 
 
 test("live composition routes verification and observation through the governed adapter and workflow", async () => {
   let boardRequests=0;
+  let thumbnailRequests=0;
+  const thumbnailSources:string[]=[];
   const boardQueries:Record<string,string>[]=[];
   const store = new InMemoryPinterestSessionStore({
     "credential:pinterest:alivo": { accessToken: "access-secret", expiresAt: "2026-09-19T12:00:00.000Z", businessPackageId: "ALIVO" },
@@ -601,7 +604,7 @@ test("live composition routes verification and observation through the governed 
   const runtime = createPinterestRuntime({
     configuration: CONFIGURATION,
     sessionStore: store,
-    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: { arbitrary: "provider-object" } })) });},
+    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: {media_type:"image",images:{"400x300":index===1?{url:"https://i.pinimg.com/400x300/rejected.png",width:0,height:300}:{url:`https://i.pinimg.com/400x300/pin-${index}.${index===2?"webp":"jpg"}`,width:400,height:300},"150x150":{url:`https://i.pinimg.com/150x150/pin-${index}.png`,width:150,height:150}},arbitrary:"provider-object"} })) });},
     now: () => NOW,
   });
   const composition = createPinterestElectronComposition({
@@ -610,24 +613,48 @@ test("live composition routes verification and observation through the governed 
     businessPackageId: "ALIVO",
     apiBaseUrl: CONFIGURATION.apiBaseUrl,
     clock: () => NOW,
+    thumbnailFetcher: async source=>{thumbnailRequests++;thumbnailSources.push(source.url);if(source.url.endsWith(".png"))return {mimeType:"image/png",base64:COMPLETE_PNG_BASE64};if(source.url.endsWith(".webp"))return {mimeType:"image/webp",base64:COMPLETE_WEBP_BASE64};return {mimeType:"image/jpeg",base64:COMPLETE_JPEG_BASE64};},
   });
   const verification = await composition.verifyConnection({ requestedCapabilities: ["OwnPins"], correlationIdentifier: "composition-verification" });
   assert.equal(verification.state, "Available");
   assert.equal(verification.capabilities[0].state, "Available");
   assert.equal(boardRequests,0);
+  assert.equal(thumbnailRequests,0);
   const observation = await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation" });
   assert.equal(observation.state, "Completed");
   assert.equal(observation.summary.acceptedObservations, 25);
   assert.equal(observation.pins.length,25);
-  assert.deepEqual(observation.pins[0], { pinId: "pin-00", title: "Observed pin 0", createdAt: "2026-08-19T12:00:00.000Z", boardName: "<b>Main board</b>", destinationDomain: "example.test" });
+  assert.deepEqual(observation.pins[0], { pinId: "pin-00", title: "Observed pin 0", createdAt: "2026-08-19T12:00:00.000Z", boardName: "<b>Main board</b>", destinationDomain: "example.test", thumbnail:{mimeType:"image/jpeg",base64:COMPLETE_JPEG_BASE64} });
+  assert.equal(thumbnailRequests,25);
+  assert.match(thumbnailSources[0],/\/400x300\//);assert.match(thumbnailSources[1],/\/150x150\//);assert.equal(observation.pins[1].thumbnail?.mimeType,"image/png");assert.equal(observation.pins[2].thumbnail?.mimeType,"image/webp");
   assert.equal(boardRequests,2);assert.deepEqual(boardQueries,[{page_size:"25"},{page_size:"25",bookmark:"next-board-page"}]);
   assert.equal(JSON.stringify(observation).includes("board-1"),false);
   assert.equal(JSON.stringify(observation).includes("must-not-cross"),false);
   assert.equal(JSON.stringify(observation).includes("provider-object"),false);
+  assert.equal(JSON.stringify(observation).includes("i.pinimg.com"),false);
+  const rendererObservation=safeObservation(observation);assert.equal(rendererObservation.pins[0].thumbnail.base64,COMPLETE_JPEG_BASE64);assert.equal(rendererObservation.pins[0].thumbnail.base64.length,976);
+  assert.equal(/i\.pinimg\.com|provider-object|media|thumbnailUrl/i.test(JSON.stringify(rendererObservation)),false);
   const duplicateObservation=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-repeat" });
-  assert.deepEqual(duplicateObservation.pins,observation.pins);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);
+  assert.deepEqual(duplicateObservation.pins,observation.pins);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);assert.equal(thumbnailRequests,25);
   assert.equal(composition.integration.registry.all()[0].adapterId.value, "PinterestMarketSourceAdapter");
   assert.equal(composition.verificationRepository.current({ value: "ALIVO" } as never)?.state, "Available");
+  await runtime.close();
+});
+
+test("production-shaped missing and rejected media stay non-fatal and never reach the thumbnail fetcher",async()=>{
+  let thumbnailRequests=0;
+  const runtime=createPinterestRuntime({configuration:CONFIGURATION,sessionStore:new InMemoryPinterestSessionStore({"credential:pinterest:alivo":{accessToken:"access-secret",expiresAt:"2026-09-19T12:00:00.000Z",businessPackageId:"ALIVO"}}),fetchImpl:async input=>{
+    const url=new URL(String(input));if(url.pathname==="/v5/boards")return response(200,{items:[{id:"board-1",name:"Board"}],bookmark:null});
+    return response(200,{items:[
+      {id:"pin-missing",created_at:"2026-08-19T12:00:00.000Z",board_id:"board-1",media:{media_type:"image",images:{}}},
+      {id:"pin-rejected",created_at:"2026-08-18T12:00:00.000Z",board_id:"board-1",media:{media_type:"image",images:{"400x300":{url:"https://i.pinimg.com.evil.example/image.jpg",width:400,height:300}}}},
+    ]});
+  },now:()=>NOW});
+  const composition=createPinterestElectronComposition({registration:runtime.getProviderRegistration(),credentialId:"credential:pinterest:alivo",businessPackageId:"ALIVO",apiBaseUrl:CONFIGURATION.apiBaseUrl,clock:()=>NOW,thumbnailFetcher:async()=>{thumbnailRequests++;return {mimeType:"image/jpeg",base64:COMPLETE_JPEG_BASE64};}});
+  await composition.verifyConnection({requestedCapabilities:["OwnPins"],correlationIdentifier:"missing-media-verification"});
+  const observation=await composition.readObservation({capability:"OwnPins",pageSize:25,correlationIdentifier:"missing-media-observation"});
+  assert.equal(observation.state,"Completed");assert.equal(observation.pins.length,2);assert.equal(observation.pins.every(pin=>pin.thumbnail===null),true);assert.equal(thumbnailRequests,0);
+  assert.equal(/pinimg|media|images|url|access-secret/i.test(JSON.stringify(observation)),false);
   await runtime.close();
 });
 
@@ -647,6 +674,6 @@ test("renderer-safe Pin DTOs are allowlisted, HTTPS-domain-only, capped, and det
   assert.equal(pins.find(pin=>pin.pinId==="pin-23")?.destinationDomain,undefined);
   assert.equal(pins.find(pin=>pin.pinId==="pin-22")?.destinationDomain,undefined);
   assert.equal(pins.every(pin=>pin.boardName==="<b>Safe board text</b>"),true);
-  for(const pin of pins)assert.deepEqual(Object.keys(pin).every(key=>["pinId","title","description","createdAt","boardName","destinationDomain"].includes(key)),true);
+  for(const pin of pins)assert.deepEqual(Object.keys(pin).every(key=>["pinId","title","description","createdAt","boardName","destinationDomain","thumbnail"].includes(key)),true);
   assert.equal(/accessToken|refreshToken|callbackUrl|media|unknown|ownership|boardReference|private\/path|token=secret/.test(JSON.stringify(pins)),false);
 });

@@ -165,6 +165,8 @@ export function createPinterestDomHarness(preload = {}) {
     history: { replaceState() {} },
     location: { hash: "" },
     URLSearchParams,
+    atob(value) { return Buffer.from(value, "base64").toString("binary"); },
+    btoa(value) { return Buffer.from(value, "binary").toString("base64"); },
     setTimeout(handler, delay) {
       const timer = { id: nextTimerId++, handler, delay, cleared: false };
       timers.push(timer);

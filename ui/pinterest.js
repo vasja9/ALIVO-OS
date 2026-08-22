@@ -97,16 +97,27 @@ function allPinsView() {
   const list = createElement("div", "pin-list");
   for (const pin of pins) {
     const card = createElement("article", "card pin-card");
-    card.append(createElement("h2", "", pin.title || "Untitled Pin"));
-    if (pin.description) card.append(createElement("p", "", pin.description));
+    const visual = createElement("div", "pin-thumbnail");
+    if (pin.thumbnail) {
+      const image = createElement("img", "pin-thumbnail-image", undefined);
+      image.src = `data:${pin.thumbnail.mimeType};base64,${pin.thumbnail.base64}`;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.alt = (pin.title || "").slice(0, 160);
+      visual.append(image);
+    } else visual.append(createElement("span", "pin-thumbnail-placeholder", "No image"));
+    const content = createElement("div", "pin-card-content");
+    content.append(createElement("h2", "", pin.title || "Untitled Pin"));
+    if (pin.description) content.append(createElement("p", "", pin.description));
     const details = createElement("div", "pin-metadata");
     const segments = [];
     const date = displayDate(pin.createdAt);
     if (date) segments.push(`Datum: ${date}`);
     if (pin.boardName) segments.push(`Board: ${pin.boardName}`);
     if (pin.destinationDomain) segments.push(`Destination: ${pin.destinationDomain}`);
-    segments.forEach((segment, index) => { if (index) details.append(createElement("span", "pin-separator", " · ")); details.append(createElement("span", "pin-metadata-item", segment)); });
-    card.append(details);
+    details.textContent = segments.join(" · ");
+    content.append(details);
+    card.append(visual, content);
     list.append(card);
   }
   fragment.append(list);
