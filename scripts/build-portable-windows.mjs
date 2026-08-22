@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { promisify } from "node:util";
-import { cp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { extractFile, listPackage } from "@electron/asar";
+import yazl from "yazl";
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -17,6 +20,8 @@ const packagePath = path.join(releaseDirectory, packageFileName);
 const checksumPath = `${packagePath}.sha256`;
 const stagingDirectory = path.join(releaseDirectory, packageFolderName);
 const fixedTimestamp = new Date("2020-01-01T00:00:00.000Z");
+const fixedZipTimestamp = new Date(2020, 0, 1, 0, 0, 0, 0);
+const fixedZipMode = 0o100644;
 const sentinelValues = ["sentinel-local-app-id", "sentinel-local-app-secret"];
 const forbiddenPath = /(?:^|\/)(?:tests?|coverage|__tests__|scripts|src|\.local|\.git|node_modules|package-lock\.json)(?:\/|$)|(?:^|\/)\.env(?:\.|$)|\.map$|pinterest-local-config\.enc/i;
 const forbiddenText = /sentinel-local-app-id|sentinel-local-app-secret|replit|BEGIN (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY/i;
@@ -38,7 +43,7 @@ Clear the local Pinterest configuration after testing.
 
 function safeBuildEnvironment() {
   const environment = {};
-  for (const key of ["PATH", "HOME", "USERPROFILE", "TEMP", "TMP", "APPDATA", "LOCALAPPDATA", "ELECTRON_CACHE", "XDG_CACHE_HOME", "npm_config_cache"]) {
+  for (const key of ["PATH", "PATHEXT", "HOME", "USERPROFILE", "TEMP", "TMP", "APPDATA", "LOCALAPPDATA", "ELECTRON_CACHE", "XDG_CACHE_HOME", "npm_config_cache"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key];
   }
   environment.FORCE_COLOR = "0";
@@ -55,21 +60,40 @@ async function run(command, args, options = {}) {
   });
 }
 
-async function runStreaming(command, args, options = {}) {
-  await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: root,
-      env: safeBuildEnvironment(),
-      windowsHide: true,
-      stdio: "inherit",
-      ...options,
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command} exited with ${code ?? signal}`));
-    });
-  });
+async function requireJavaScriptCli(cliPath, description) {
+  let cliStat;
+  try {
+    cliStat = await stat(cliPath);
+  } catch {
+    throw new Error(`${description} JavaScript CLI does not exist: ${cliPath}`);
+  }
+  if (!cliStat.isFile()) throw new Error(`${description} JavaScript CLI is not a file: ${cliPath}`);
+}
+
+async function resolveNpmCliPath() {
+  const npmCliPath = process.env.npm_execpath;
+  if (!npmCliPath) throw new Error("npm_execpath is required to run the portable package build");
+  if (!path.isAbsolute(npmCliPath)) throw new Error(`npm_execpath must be an absolute path: ${npmCliPath}`);
+  if (path.basename(npmCliPath).toLowerCase() !== "npm-cli.js") {
+    throw new Error(`npm_execpath must point to npm-cli.js: ${npmCliPath}`);
+  }
+  await requireJavaScriptCli(npmCliPath, "npm");
+  return npmCliPath;
+}
+
+async function resolveWindowsTarPath() {
+  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  if (!systemRoot) throw new Error("SystemRoot or WINDIR is required to verify the portable Windows ZIP");
+  if (!path.isAbsolute(systemRoot)) throw new Error(`SystemRoot or WINDIR must be an absolute path: ${systemRoot}`);
+  const tarPath = path.join(systemRoot, "System32", "tar.exe");
+  let tarStat;
+  try {
+    tarStat = await stat(tarPath);
+  } catch {
+    throw new Error(`Windows system tar executable does not exist: ${tarPath}`);
+  }
+  if (!tarStat.isFile()) throw new Error(`Windows system tar executable is not a file: ${tarPath}`);
+  return tarPath;
 }
 
 async function removeGeneratedOutput() {
@@ -86,6 +110,54 @@ async function normalizeMtimes(target) {
   await utimes(target, fixedTimestamp, fixedTimestamp);
 }
 
+async function collectZipFiles(directory, relativeDirectory = "") {
+  const files = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    const diskPath = path.join(directory, entry.name);
+    const relativePath = path.join(relativeDirectory, entry.name).replaceAll("\\", "/");
+    const info = await lstat(diskPath);
+    if (info.isSymbolicLink()) throw new Error(`Portable ZIP source contains a symbolic link: ${relativePath}`);
+    if (info.isDirectory()) files.push(...await collectZipFiles(diskPath, relativePath));
+    else if (info.isFile()) files.push({ diskPath, relativePath });
+    else throw new Error(`Portable ZIP source contains an unsupported filesystem entry: ${relativePath}`);
+  }
+  return files.sort((left, right) => left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0);
+}
+
+export async function createDeterministicZip(sourceDirectory, archivePath, archiveRoot) {
+  const files = await collectZipFiles(sourceDirectory);
+  const zipFile = new yazl.ZipFile();
+  const output = createWriteStream(archivePath, { flags: "w" });
+  const completed = new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      output.destroy();
+      reject(error);
+    };
+    zipFile.outputStream.once("error", fail);
+    output.once("error", fail);
+    output.once("finish", () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    });
+  });
+  zipFile.outputStream.pipe(output);
+  for (const file of files) {
+    zipFile.addFile(file.diskPath, `${archiveRoot}/${file.relativePath}`, {
+      mtime: fixedZipTimestamp,
+      mode: fixedZipMode,
+      compressionLevel: 9,
+      forceDosTimestamp: true,
+    });
+  }
+  zipFile.end();
+  await completed;
+}
+
 function assertSafeEntry(entry) {
   const normalized = entry.replaceAll("\\", "/").replace(/^\/+/, "");
   if (forbiddenPath.test(normalized)) throw new Error(`Portable package contains forbidden path: ${normalized}`);
@@ -100,7 +172,7 @@ async function verifyUnpackedPackage(directory) {
   await stat(executable);
   const asarPath = path.join(directory, "resources", "app.asar");
   await stat(asarPath);
-  const entries = listPackage(asarPath).map((entry) => entry.replace(/^\/+/, ""));
+  const entries = listPackage(asarPath).map((entry) => entry.replace(/^[/\\]+/, ""));
   for (const entry of entries) {
     assertSafeEntry(`resources/app.asar/${entry}`);
     if (/\.(?:c?js|json|html|css|txt)$/i.test(entry)) {
@@ -119,9 +191,9 @@ async function keepEnglishLocaleOnly(directory) {
 }
 
 async function verifyZipContents() {
-  const { stdout } = await run(process.platform === "win32" ? "tar.exe" : "unzip", process.platform === "win32"
-    ? ["-tf", packagePath]
-    : ["-Z1", packagePath]);
+  const { stdout } = process.platform === "win32"
+    ? await run(await resolveWindowsTarPath(), ["-tf", packagePath])
+    : await run("unzip", ["-Z1", packagePath]);
   const entries = stdout.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
   if (!entries.includes(`${packageFolderName}/README-FIRST.txt`)) throw new Error("Portable ZIP is missing README-FIRST.txt");
   if (!entries.includes(`${packageFolderName}/ALIVO OS.exe`)) throw new Error("Portable ZIP is missing ALIVO OS.exe");
@@ -135,19 +207,18 @@ async function verifyZipContents() {
 
 async function main() {
   await removeGeneratedOutput();
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const builderCommand = process.platform === "win32"
-    ? path.join(root, "node_modules", ".bin", "electron-builder.cmd")
-    : path.join(root, "node_modules", ".bin", "electron-builder");
-  await run(npmCommand, ["run", "build"]);
-  await run(builderCommand, ["--win", "dir", "--x64", "--config", "electron-builder.yml", "--publish", "never"]);
+  const npmCliPath = await resolveNpmCliPath();
+  const builderCliPath = path.join(root, "node_modules", "electron-builder", "cli.js");
+  await requireJavaScriptCli(builderCliPath, "Electron Builder");
+  await run(process.execPath, [npmCliPath, "run", "build"]);
+  await run(process.execPath, [builderCliPath, "--win", "dir", "--x64", "--config", "electron-builder.yml", "--publish", "never"]);
   await keepEnglishLocaleOnly(unpackedDirectory);
   await verifyUnpackedPackage(unpackedDirectory);
 
   await cp(unpackedDirectory, stagingDirectory, { recursive: true });
   await writeFile(path.join(stagingDirectory, "README-FIRST.txt"), readme, { encoding: "utf8", mode: 0o600 });
   await normalizeMtimes(stagingDirectory);
-  await runStreaming("zip", ["-9", "-X", "-r", packagePath, packageFolderName], { cwd: releaseDirectory });
+  await createDeterministicZip(stagingDirectory, packagePath, packageFolderName);
   const checksum = createHash("sha256").update(await readFile(packagePath)).digest("hex");
   await writeFile(checksumPath, `${checksum}  ${packageFileName}\n`, { encoding: "utf8", mode: 0o600 });
   await verifyZipContents();
@@ -158,4 +229,4 @@ async function main() {
   console.log(JSON.stringify({ packagePath: path.relative(root, packagePath), checksumPath: path.relative(root, checksumPath), bytes: packageSize, sha256: checksum }));
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
