@@ -18,7 +18,7 @@ const { createPinterestContextResolver } = require("../../electron/pinterest-con
 const { createPinterestLifecycle } = require("../../electron/pinterest-lifecycle.cjs");
 const { createPinterestIpcController } = require("../../electron/pinterest-ipc-controller.cjs");
 const { transition, createPinterestUiState, PINTEREST_UI_STATE } = await import("../../ui/pinterest-connection-state.js");
-const { createPinterestElectronComposition } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
+const { createPinterestElectronComposition, rendererSafePins } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
 const CONFIGURATION = {
@@ -593,13 +593,15 @@ test("main-owned Pinterest context rejects renderer attempts to rebind package, 
 });
 
 test("live composition routes verification and observation through the governed adapter and workflow", async () => {
+  let boardRequests=0;
+  const boardQueries:Record<string,string>[]=[];
   const store = new InMemoryPinterestSessionStore({
     "credential:pinterest:alivo": { accessToken: "access-secret", expiresAt: "2026-09-19T12:00:00.000Z", businessPackageId: "ALIVO" },
   });
   const runtime = createPinterestRuntime({
     configuration: CONFIGURATION,
     sessionStore: store,
-    fetchImpl: async () => response(200, { items: [{ id: "pin-1", type: "pin", ownership: "OwnedAuthorizedResource", title: "Observed pin", observedAt: "2026-08-19T12:00:00.000Z" }] }),
+    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: { arbitrary: "provider-object" } })) });},
     now: () => NOW,
   });
   const composition = createPinterestElectronComposition({
@@ -612,10 +614,39 @@ test("live composition routes verification and observation through the governed 
   const verification = await composition.verifyConnection({ requestedCapabilities: ["OwnPins"], correlationIdentifier: "composition-verification" });
   assert.equal(verification.state, "Available");
   assert.equal(verification.capabilities[0].state, "Available");
-  const observation = await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 1, correlationIdentifier: "composition-observation" });
+  assert.equal(boardRequests,0);
+  const observation = await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation" });
   assert.equal(observation.state, "Completed");
-  assert.equal(observation.summary.acceptedObservations, 1);
+  assert.equal(observation.summary.acceptedObservations, 25);
+  assert.equal(observation.pins.length,25);
+  assert.deepEqual(observation.pins[0], { pinId: "pin-00", title: "Observed pin 0", createdAt: "2026-08-19T12:00:00.000Z", boardName: "<b>Main board</b>", destinationDomain: "example.test" });
+  assert.equal(boardRequests,2);assert.deepEqual(boardQueries,[{page_size:"25"},{page_size:"25",bookmark:"next-board-page"}]);
+  assert.equal(JSON.stringify(observation).includes("board-1"),false);
+  assert.equal(JSON.stringify(observation).includes("must-not-cross"),false);
+  assert.equal(JSON.stringify(observation).includes("provider-object"),false);
+  const duplicateObservation=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-repeat" });
+  assert.deepEqual(duplicateObservation.pins,observation.pins);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);
   assert.equal(composition.integration.registry.all()[0].adapterId.value, "PinterestMarketSourceAdapter");
   assert.equal(composition.verificationRepository.current({ value: "ALIVO" } as never)?.state, "Available");
   await runtime.close();
+});
+
+test("renderer-safe Pin DTOs are allowlisted, HTTPS-domain-only, capped, and deterministic",()=>{
+  const observations=Array.from({length:30},(_,index)=>({
+    type:"pin",
+    observedAt:new Date(`2026-08-${String((index%25)+1).padStart(2,"0")}T12:00:00.000Z`),
+    payloadReference:JSON.stringify({resourceId:`pin-${String(index).padStart(2,"0")}`,resourceType:"pin",ownership:index===24?"OwnedAuthorizedResource":"provider-value",title:index===24?"<img src=x onerror=bad()>":`Pin ${index}`,description:"description",boardReference:"board",link:index===24?"https://Example.test/private/path?token=secret":index===23?"http://unsafe.test/path":index===22?"not a URL":"https://safe.test/path",accessToken:"secret",refreshToken:"secret",callbackUrl:"secret",media:{raw:true},unknown:"discard"}),
+  }));
+  const boards=new Map([["board","<b>Safe board text</b>"]]);
+  const pins=rendererSafePins(observations,boards);
+  assert.equal(pins.length,25);
+  assert.deepEqual(pins.map(pin=>pin.createdAt),[...pins.map(pin=>pin.createdAt)].sort().reverse());
+  assert.deepEqual(rendererSafePins([...observations].reverse(),boards).map(pin=>pin.pinId),pins.map(pin=>pin.pinId));
+  assert.equal(pins.find(pin=>pin.pinId==="pin-24")?.title,"<img src=x onerror=bad()>");
+  assert.equal(pins.find(pin=>pin.pinId==="pin-24")?.destinationDomain,"example.test");
+  assert.equal(pins.find(pin=>pin.pinId==="pin-23")?.destinationDomain,undefined);
+  assert.equal(pins.find(pin=>pin.pinId==="pin-22")?.destinationDomain,undefined);
+  assert.equal(pins.every(pin=>pin.boardName==="<b>Safe board text</b>"),true);
+  for(const pin of pins)assert.deepEqual(Object.keys(pin).every(key=>["pinId","title","description","createdAt","boardName","destinationDomain"].includes(key)),true);
+  assert.equal(/accessToken|refreshToken|callbackUrl|media|unknown|ownership|boardReference|private\/path|token=secret/.test(JSON.stringify(pins)),false);
 });

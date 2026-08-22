@@ -5,6 +5,7 @@ import { BusinessPackageId } from "../../intelligence/market/MarketIntelligenceD
 import { MarketSourceAdapterId, MarketSourceCapability } from "../../intelligence/market/integration/MarketSourceIntegrationDomain.ts";
 import { MarketSourceIntegrationService } from "../../intelligence/market/integration/MarketSourceIntegrationService.ts";
 import { AuthenticationType, CredentialId, CredentialStatus } from "../../security/credentials/CredentialVault.ts";
+import { ExternalAuthenticationId, ExternalAuthenticationMethod, ExternalAuthenticationRequest, InterruptedOperationReference } from "../../security/authentication/ExternalAuthenticationDomain.ts";
 import { PinterestConnectionVerificationId, PinterestConnectionVerificationRequest } from "./PinterestConnectionVerificationDomain.ts";
 import { PinterestConnectionVerificationRepository } from "./PinterestConnectionVerificationRepository.ts";
 import { PinterestConnectionVerifier } from "./PinterestConnectionVerifier.ts";
@@ -27,6 +28,44 @@ const SCOPE_FOR_CAPABILITY:Readonly<Record<string, PinterestObservationCollectio
 });
 
 const safeText = (value:unknown, fallback:string, maximum=160):string => typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, maximum) : fallback;
+const optionalText = (value:unknown, maximum:number):string|undefined => {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized && !/[\u0000-\u001f\u007f]/.test(normalized) ? normalized.slice(0, maximum) : undefined;
+};
+const destinationDomain = (value:unknown):string|undefined => {
+  if (typeof value !== "string" || value.length > 2048) return undefined;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password && parsed.hostname.length <= 253 ? parsed.hostname.toLowerCase() : undefined;
+  } catch { return undefined; }
+};
+
+export interface PinterestRendererSafePin {
+  readonly pinId:string;
+  readonly title?:string;
+  readonly description?:string;
+  readonly createdAt?:string;
+  readonly boardName:string;
+  readonly destinationDomain?:string;
+}
+
+const canonicalPayload=(observation:{payloadReference:string}):Record<string,unknown>|undefined=>{try{const parsed=JSON.parse(observation.payloadReference);return parsed&&typeof parsed==="object"&&!Array.isArray(parsed)?parsed:undefined;}catch{return undefined;}};
+const boardIds=(observations:readonly {type:string;payloadReference:string}[]):readonly string[]=>Object.freeze([...new Set(observations.flatMap(observation=>{const canonical=observation.type==="pin"?canonicalPayload(observation):undefined;const id=optionalText(canonical?.boardReference,128);return id?[id]:[];}))].sort());
+
+export function rendererSafePins(observations:readonly {type:string;observedAt:Date;payloadReference:string}[],boards:ReadonlyMap<string,string>=new Map()):readonly PinterestRendererSafePin[] {
+  const pins:PinterestRendererSafePin[]=[];
+  for(const observation of observations){
+    if(observation.type!=="pin")continue;
+    const canonical=canonicalPayload(observation);if(!canonical)continue;
+    if(canonical.resourceType!=="pin")continue;
+    const pinId=optionalText(canonical.resourceId,128);if(!pinId)continue;
+    const observedAt=observation.observedAt instanceof Date&&Number.isFinite(observation.observedAt.getTime())?observation.observedAt.toISOString():undefined;
+    const title=optionalText(canonical.title,160),description=optionalText(canonical.description,500),boardId=optionalText(canonical.boardReference,128),domain=destinationDomain(canonical.link);
+    pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(observedAt&&{createdAt:observedAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain})}));
+  }
+  return Object.freeze(pins.sort((left,right)=>(right.createdAt??"").localeCompare(left.createdAt??"")||left.pinId.localeCompare(right.pinId)).slice(0,25));
+}
 
 export interface PinterestElectronCompositionRequest {
   readonly registration:PinterestProductionProviderRegistration;
@@ -111,6 +150,26 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
     clock,
   );
   let sequence = 0;
+  let pinSnapshot:readonly PinterestRendererSafePin[]=Object.freeze([]);
+  const boardLookup=new Map<string,string>();
+  const resolveBoardNames=async(ids:readonly string[],correlationIdentifier:string)=>{
+    const unresolved=new Set(ids.filter(id=>!boardLookup.has(id)));if(!unresolved.size)return;
+    try{
+    const requestedAt=clock();
+    const interrupted=new InterruptedOperationReference({tcoTaskReference:"ElectronUI",sourceAdapterReference:ADAPTER_ID,businessPackageId,correlationIdentifier});
+    const authentication=await request.registration.authentication.authenticate(new ExternalAuthenticationRequest({id:new ExternalAuthenticationId(`electron-pinterest-boards:${++sequence}`),credentialId,method:ExternalAuthenticationMethod.OAuth,businessPackageId,sourceAdapterReference:ADAPTER_ID,requestedCapability:"OwnBoards",tcoTaskReference:"ElectronUI",sourceRequestReference:`electron-pinterest-boards:${sequence}`,correlationIdentifier,requestingAuthorityReference:"ElectronUI",requestedAt,interruptedOperation:interrupted}));
+    if(!authentication.successful)return;
+    let bookmark:string|undefined;const seen=new Set<string>();
+    for(let page=0;page<10&&unresolved.size;page++){
+      const response=await request.registration.transport.execute({baseUrl:request.apiBaseUrl,environment:PinterestEnvironment.Production,path:"/v5/boards",query:{page_size:"25",...(bookmark?{bookmark}:{})},timeoutMs:30_000,session:authentication.session});
+      if(response.status<200||response.status>=300)return;
+      const root=response.body&&typeof response.body==="object"&&!Array.isArray(response.body)?response.body as Record<string,unknown>:undefined;
+      if(!root||!Array.isArray(root.items)||(root.bookmark!==undefined&&root.bookmark!==null&&typeof root.bookmark!=="string"))return;
+      for(const item of root.items){if(!item||typeof item!=="object"||Array.isArray(item))continue;const board=item as Record<string,unknown>,id=optionalText(board.id,128),name=optionalText(board.name,160);if(id&&name&&unresolved.has(id)){boardLookup.set(id,name);unresolved.delete(id);}}
+      if(typeof root.bookmark!=="string"||!root.bookmark)break;if(seen.has(root.bookmark))return;seen.add(root.bookmark);bookmark=root.bookmark;
+    }
+    }catch{return;}
+  };
   const capability = (value:unknown) => new MarketSourceCapability(safeText(value, "OwnPins"));
   const common = (input:Record<string, unknown>) => ({
     credentialId: credentialId.value,
@@ -161,13 +220,17 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         requestedAt: clock(),
       });
       const result = await observationWorkflow.run(observationRequest);
-      if (!(result instanceof PinterestObservationWorkflowResult)) return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined };
+      if (!(result instanceof PinterestObservationWorkflowResult)) return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined, pins: pinSnapshot };
+      const ids=boardIds(result.acceptedObservations);if(ids.length)await resolveBoardNames(ids,context.correlationIdentifier);
+      const normalizedPins=rendererSafePins(result.acceptedObservations,boardLookup);
+      if(normalizedPins.length>0||result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0)pinSnapshot=normalizedPins;
       return {
         state: result.finalState,
         summary: result.summary.properties,
         warnings: result.warnings,
         failures: result.failures,
         provenance: result.properties.provenance,
+        pins: pinSnapshot,
       };
     },
     verificationRepository,

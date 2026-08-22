@@ -104,6 +104,12 @@ test("Pinterest UI redacts sensitive provider fields and never exposes them in r
   assert.doesNotMatch(source, /console\.(log|error|warn)|accessToken|refreshToken|clientSecret|sessionSecret|codeVerifier|callbackUrl/);
 });
 
+test("Pinterest UI accepts only board names and omits ownership and board IDs from safe Pin state",()=>{
+  const safe=safeObservation({pins:[{pinId:"pin-1",boardName:"Named board",boardReference:"123456",ownership:"OwnedAuthorizedResource",accessToken:"secret"}]});
+  assert.deepEqual(safe.pins,[{pinId:"pin-1",boardName:"Named board"}]);
+  assert.equal(/123456|ownership|accessToken|secret/i.test(JSON.stringify(safe)),false);
+});
+
 test("Pinterest UI preserves a verified connection when observation data is unavailable", () => {
   let state = transition(createPinterestUiState(), { type: "VERIFY_RESULT", value: { ok: true, state: "Available", authenticationState: "Authenticated" } });
   state = transition(state, { type: "OBSERVATION_REQUEST" });

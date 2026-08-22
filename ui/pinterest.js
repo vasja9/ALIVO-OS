@@ -19,7 +19,6 @@ const labels = Object.freeze({
 });
 const viewCopy = Object.freeze({
   queue: "Queue data is outside this read-only provider observation contract.",
-  all: "Pin detail data is not requested by this read-only migration.",
   timing: "Timing policy remains governed elsewhere and is not changed by Pinterest observation.",
   scheduled: "Scheduling remains governed elsewhere and is not changed by Pinterest observation.",
   published: "Publishing remains governed elsewhere and no write operation is exposed here.",
@@ -37,6 +36,12 @@ let pollAttempts = 0;
 
 const api = () => globalThis.window?.alivoPinterest;
 const words = value => String(value ?? "").replace(/([a-z])([A-Z])/g, "$1 $2");
+const displayDate = value => {
+  if (typeof value !== "string") return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}.${String(date.getUTCFullYear()).slice(-2)}`;
+};
 const busy = () => connection.uiState === PINTEREST_UI_STATE.Connecting || connection.uiState === PINTEREST_UI_STATE.Verifying;
 const statusLabel = () => labels[connection.uiState] || ["Pinterest status unavailable", "Pinterest state is unavailable."];
 
@@ -60,12 +65,52 @@ function observationSummary() {
   card.append(createElement("p", "eyebrow", "Pinterest evidence · read-only"), createElement("h2", "", "Observation result"), metrics);
   if (observation.warningCount || observation.failureCount) {
     const diagnostics = [];
-    if (observation.warningCount) diagnostics.push(`${observation.warningCount} provider warning${observation.warningCount === 1 ? "" : "s"} withheld`);
-    if (observation.failureCount) diagnostics.push(`${observation.failureCount} provider failure${observation.failureCount === 1 ? "" : "s"} withheld`);
+    if (observation.warningCount) diagnostics.push(`${observation.warningCount} workflow warning${observation.warningCount === 1 ? "" : "s"} withheld`);
+    if (observation.failureCount) diagnostics.push(`${observation.failureCount} workflow failure${observation.failureCount === 1 ? "" : "s"} withheld`);
     card.append(createElement("p", "", diagnostics.join(" · ")));
   }
   card.append(createElement("small", "", "Provider payloads, tokens, callback data and secrets are never rendered."));
   return card;
+}
+
+function allPinsView() {
+  const fragment = document.createDocumentFragment();
+  const observation = connection.observation;
+  const pins = Array.isArray(observation?.pins) ? observation.pins : [];
+  if (connection.observationStatus === "unread") {
+    const empty = createElement("article", "card empty");
+    empty.append(createElement("h2", "", "All Pins"), createElement("p", "", "No observation has been read yet. Use Read observation to load Pins."));
+    fragment.append(empty);
+    return fragment;
+  }
+  if (connection.observationStatus === "unavailable") {
+    const unavailable = createElement("article", "card empty");
+    unavailable.append(createElement("h2", "", "Pinterest observation temporarily unavailable"), createElement("p", "", "The authenticated connection remains available. Previously observed Pins remain listed below when available."));
+    fragment.append(unavailable);
+  }
+  if (!pins.length) {
+    const empty = createElement("article", "card empty");
+    empty.append(createElement("h2", "", "All Pins"), createElement("p", "", connection.observationStatus === "empty" ? "The observation completed successfully with no Pins." : "No safe Pin snapshot is available."));
+    fragment.append(empty);
+    return fragment;
+  }
+  const list = createElement("div", "pin-list");
+  for (const pin of pins) {
+    const card = createElement("article", "card pin-card");
+    card.append(createElement("h2", "", pin.title || "Untitled Pin"));
+    if (pin.description) card.append(createElement("p", "", pin.description));
+    const details = createElement("div", "pin-metadata");
+    const segments = [];
+    const date = displayDate(pin.createdAt);
+    if (date) segments.push(`Datum: ${date}`);
+    if (pin.boardName) segments.push(`Board: ${pin.boardName}`);
+    if (pin.destinationDomain) segments.push(`Destination: ${pin.destinationDomain}`);
+    segments.forEach((segment, index) => { if (index) details.append(createElement("span", "pin-separator", " · ")); details.append(createElement("span", "pin-metadata-item", segment)); });
+    card.append(details);
+    list.append(card);
+  }
+  fragment.append(list);
+  return fragment;
 }
 
 function createElement(tag, className = "", content = "") {
@@ -110,6 +155,10 @@ function scopedView() {
     fragment.append(observationSummary());
     return fragment;
   }
+  if (view === "all") {
+    fragment.append(allPinsView());
+    return fragment;
+  }
   const card = createElement("article", "card empty");
   card.append(createElement("h2", "", words(view)), createElement("p", "", viewCopy[view] || "This Pinterest view is unavailable from the current read-only contract."));
   fragment.append(card);
@@ -141,12 +190,9 @@ async function refreshStatus({ polling = false } = {}) {
   }
   connection = transition(connection, { type: "STATUS_RESULT", value: result, oauthTimedOut: polling && pollAttempts >= 8 });
   render();
-  if (result?.state === "Authenticated" || result?.state === "RefreshRequired") await verifyConnection();
   if (polling && connection.uiState === PINTEREST_UI_STATE.Connecting && pollAttempts < 8) {
     clearTimeout(statusPoll);
     statusPoll = setTimeout(() => { pollAttempts += 1; refreshStatus({ polling: true }); }, 1500);
-  } else if (polling && connection.uiState === PINTEREST_UI_STATE.Connected) {
-    await readObservation();
   }
 }
 
@@ -181,7 +227,6 @@ async function verifyConnection() {
     const result = await api().verifyConnection({ requestedCapabilities: ["MarketObservation"], correlationIdentifier: "pinterest-ui-verify" });
     connection = transition(connection, { type: "VERIFY_RESULT", value: result });
     render();
-    if (connection.uiState === PINTEREST_UI_STATE.Connected) await readObservation();
   } catch {
     connection = transition(connection, { type: "VERIFY_RESULT", value: { ok: false, code: "NETWORK_FAILURE" } });
     render();

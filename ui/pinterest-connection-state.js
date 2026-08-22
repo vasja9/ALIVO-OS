@@ -65,6 +65,7 @@ export function createPinterestUiState(contractAvailable = true) {
     pendingOAuth: false,
     verifiedConnectionState: undefined,
     observation: undefined,
+    observationStatus: "unread",
     message: contractAvailable ? "Pinterest is not connected" : "Pinterest preload contract is unavailable",
   });
 }
@@ -140,7 +141,9 @@ export function transition(current, event) {
     const observationResult = observationState(event.value);
     const preserveVerifiedConnection = ["Failed", "Unavailable", "NoData"].includes(event.value?.state) || (!event.value?.ok && ![PINTEREST_UI_STATE.RateLimited, PINTEREST_UI_STATE.ReauthorizationRequired].includes(observationResult));
     const next = preserveVerifiedConnection && state.verifiedConnectionState ? state.verifiedConnectionState : observationResult;
-    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation: next === PINTEREST_UI_STATE.ObservationRead ? safeObservation(event.value) : undefined, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
+    const safe = safeObservation(event.value);
+    const observationStatus = ["Failed", "Unavailable"].includes(event.value?.state) || !event.value?.ok ? "unavailable" : safe.pins.length ? "available" : "empty";
+    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation: safe, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
   }
   return state;
 }
@@ -161,7 +164,15 @@ function redact(value, key = "") {
 }
 
 export function safeObservation(value) {
-  if (!value || typeof value !== "object") return undefined;
+  if (!value || typeof value !== "object") return Object.freeze({ pins: Object.freeze([]) });
+  const pins = Array.isArray(value.pins) ? value.pins.slice(0, 25).flatMap(pin => {
+    if (!pin || typeof pin !== "object" || typeof pin.pinId !== "string" || !pin.pinId.trim()) return [];
+    const safe = { pinId: text(pin.pinId).slice(0, 128), boardName: typeof pin.boardName === "string" && pin.boardName.trim() ? text(pin.boardName).slice(0, 160) : "Unknown board" };
+    for (const [key, maximum] of [["title", 160], ["description", 500], ["createdAt", 32], ["destinationDomain", 253]]) {
+      if (typeof pin[key] === "string" && pin[key].trim()) safe[key] = text(pin[key]).slice(0, maximum);
+    }
+    return [Object.freeze(safe)];
+  }) : [];
   return redact({
     state: value.state,
     status: value.status,
@@ -169,5 +180,6 @@ export function safeObservation(value) {
     warningCount: Array.isArray(value.warnings) ? Math.min(value.warnings.length, 25) : 0,
     failureCount: Array.isArray(value.failures) ? Math.min(value.failures.length, 25) : 0,
     provenance: value.provenance,
+    pins: Object.freeze(pins),
   });
 }

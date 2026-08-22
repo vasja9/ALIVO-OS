@@ -38,7 +38,7 @@ test("DOM harness accepts LF and CRLF source with the same transform semantics",
   assert.equal(pinterestUiModuleToHarnessScript(crlfSource), pinterestUiModuleToHarnessScript(lfSource).replace(/\n/g, "\r\n"));
 });
 
-test("DOM harness runs startOAuth to connectionStatus to verifyConnection to readObservation without rendering provider payloads", async () => {
+test("DOM harness reads observations only from the explicit action without rendering provider payloads", async () => {
   const secretPayload = {
     ok: true,
     state: "CompletedWithWarnings",
@@ -60,7 +60,12 @@ test("DOM harness runs startOAuth to connectionStatus to verifyConnection to rea
   assert.equal(harness.hasText("Connecting"), true);
   assert.equal(await harness.runNextTimer(), true);
   assert.equal(harness.callCount("connectionStatus"), 2);
+  assert.equal(harness.callCount("verifyConnection"), 0);
+  assert.equal(harness.callCount("readObservation"), 0);
+  await harness.clickAction("verify");
   assert.equal(harness.callCount("verifyConnection"), 1);
+  assert.equal(harness.callCount("readObservation"), 0);
+  await harness.clickAction("observe");
   assert.equal(harness.callCount("readObservation"), 1);
   assert.equal(harness.snapshotHistory.some(snapshot => snapshot.includes("Connected")), true);
   assert.equal(harness.snapshotHistory.some(snapshot => snapshot.includes("Checking connection")), true);
@@ -81,20 +86,22 @@ test("DOM harness runs startOAuth to connectionStatus to verifyConnection to rea
   await firstConnect;
 });
 
-test("DOM harness restores a connected read-only workspace on reopen without starting OAuth again", async () => {
+test("DOM harness refresh and reopen update status without automatic verification or observation reads", async () => {
   const harness = await createPinterestDomHarness(preloadFor({
     connectionStatus: sequence(authenticated, authenticated),
   })).start();
 
-  assert.equal(harness.hasText("Read-only observation ready"), true);
+  assert.equal(harness.hasText("Connected"), true);
+  assert.equal(harness.callCount("verifyConnection"), 0);
+  assert.equal(harness.callCount("readObservation"), 0);
   const oauthCalls = harness.callCount("startOAuth");
   await harness.reopen();
 
   assert.equal(harness.callCount("connectionStatus"), 2);
-  assert.equal(harness.callCount("verifyConnection"), 2);
-  assert.equal(harness.callCount("readObservation"), 2);
+  assert.equal(harness.callCount("verifyConnection"), 0);
+  assert.equal(harness.callCount("readObservation"), 0);
   assert.equal(harness.callCount("startOAuth"), oauthCalls);
-  assert.equal(harness.hasText("Read-only observation ready"), true);
+  assert.equal(harness.hasText("Connected"), true);
 });
 
 test("DOM harness keeps OAuth success plus PermissionLimited verification connected and offers reauthorization", async () => {
@@ -110,6 +117,7 @@ test("DOM harness keeps OAuth success plus PermissionLimited verification connec
 
   await harness.clickAction("connect");
   assert.equal(await harness.runNextTimer(), true);
+  await harness.clickAction("verify");
   assert.equal(harness.callCount("startOAuth"), 1);
   assert.equal(harness.callCount("connectionStatus"), 2);
   assert.equal(harness.callCount("verifyConnection"), 1);
@@ -130,8 +138,9 @@ test("DOM harness keeps a valid pins connection connected when analytics scope i
     },
   })).start();
 
+  await harness.clickAction("verify");
   assert.equal(harness.snapshotHistory.some(snapshot => snapshot.includes("Connected")), true);
-  assert.equal(harness.hasText("Read-only observation ready"), true);
+  assert.equal(harness.callCount("readObservation"), 0);
   assert.equal(harness.hasText("Disconnected"), false);
   assert.equal(harness.calls.find(call => call.name === "verifyConnection")?.input.requestedCapabilities.includes("AnalyticsObservation"), false);
   assert.equal(harness.logs.length, 0);
@@ -148,6 +157,7 @@ test("DOM harness maps an actually invalid session to reauthorization without re
     }),
   })).start();
 
+  await harness.clickAction("verify");
   assert.equal(harness.hasText("Reauthorization required"), true);
   assert.equal(harness.hasText("Connected with limited permissions"), false);
   assert.equal(harness.hasText("raw"), false);
@@ -199,6 +209,7 @@ test("DOM harness covers reauthorization after 401, timeout, rate limit, and fai
     if (scenario.startOAuth) {
       await harness.clickAction("connect");
     } else {
+      await harness.clickAction("verify");
       assert.equal(harness.hasText(scenario.text), true);
     }
     assert.equal(harness.hasText(scenario.text), true);
@@ -234,4 +245,40 @@ test("DOM harness shows configuration missing and rejects missing or incomplete 
 test("DOM harness has no network transport or alternate Pinterest test API", () => {
   assert.doesNotMatch(harnessSource, /\b(fetch|XMLHttpRequest|WebSocket)\s*\(/);
   assert.doesNotMatch(harnessSource, /\b(readPin|pinDetail|createPin|publishPin|executeCommand)\b/);
+});
+
+test("All Pins renders safe DTO values as text and exposes empty and unavailable states", async () => {
+  const maliciousTitle = '<img src=x onerror="steal()">';
+  const maliciousBoard = '<svg onload="steal()">Board</svg>';
+  const harness = await createPinterestDomHarness(preloadFor({
+    connectionStatus: async () => authenticated,
+    readObservation: sequence(
+      { ok: true, state: "Completed", summary: { acceptedObservations: 2 }, pins: [{ pinId: "pin-1", title: maliciousTitle, description: "<script>bad()</script>", createdAt: "2026-08-22T23:59:00.000-05:00", boardName: maliciousBoard, destinationDomain: "example.test" }, { pinId: "pin-2", createdAt: "invalid", boardName: "Unknown board" }] },
+      { ok: true, state: "Unavailable", pins: [{ pinId: "pin-1", title: maliciousTitle, boardName: maliciousBoard }] },
+    ),
+  })).start();
+  await harness.clickAction("verify");
+  await harness.clickAction("observe");
+  harness.document.querySelector('[data-pin-view="all"]').click();
+  await harness.settle();
+  assert.equal(harness.hasText(maliciousTitle), true);
+  assert.equal(harness.hasText("<script>bad()</script>"), true);
+  assert.equal(harness.hasText("Datum: 23.08.26 · Board: " + maliciousBoard + " · Destination: example.test"), true);
+  assert.equal(harness.hasText("Unknown board"), true);
+  assert.equal(harness.hasText("Invalid Date"), false);
+  assert.equal(harness.hasText("board-1"), false);
+  assert.equal(harness.hasText("Ownership:"), false);
+  assert.equal(harness.callCount("readObservation"), 1);
+  await harness.clickAction("observe");
+  assert.equal(harness.hasText("temporarily unavailable"), true);
+  assert.equal(harness.hasText(maliciousTitle), true);
+  assert.equal(harness.hasText("Disconnected"), false);
+
+  const empty = await createPinterestDomHarness(preloadFor({ connectionStatus: async () => authenticated, readObservation: async () => ({ ok: true, state: "NoData", pins: [] }) })).start();
+  empty.document.querySelector('[data-pin-view="all"]').click();
+  await empty.settle();
+  assert.equal(empty.hasText("No observation has been read yet"), true);
+  await empty.clickAction("verify");
+  await empty.clickAction("observe");
+  assert.equal(empty.hasText("completed successfully with no Pins"), true);
 });
