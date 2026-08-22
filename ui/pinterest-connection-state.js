@@ -39,6 +39,21 @@ const SAFE_MESSAGES = Object.freeze({
 const text = (value, fallback = "") => typeof value === "string" && value.trim() ? value.trim().slice(0, 240) : fallback;
 const THUMBNAIL_MAX_BYTES = 256 * 1024;
 const THUMBNAIL_MAX_BASE64_LENGTH = Math.ceil(THUMBNAIL_MAX_BYTES / 3) * 4;
+const AUDIT_RULES = Object.freeze({
+  TITLE_MISSING: Object.freeze({ level: "Required", message: "Add a Pin title." }),
+  TITLE_TOO_LONG: Object.freeze({ level: "Required", message: "Shorten the title to 100 characters or fewer." }),
+  DESTINATION_MISSING: Object.freeze({ level: "Required", message: "Add a destination to alivo.eu." }),
+  DESTINATION_OUTSIDE_ALIVO: Object.freeze({ level: "Required", message: "Review the destination: it is outside alivo.eu." }),
+  DESCRIPTION_MISSING: Object.freeze({ level: "Review", message: "Add a Pin description for Pinterest relevance." }),
+  DESCRIPTION_TOO_LONG: Object.freeze({ level: "Review", message: "Shorten the description to 800 characters or fewer." }),
+  THUMBNAIL_MISSING: Object.freeze({ level: "Review", message: "Add or repair the Pin image." }),
+  BOARD_UNKNOWN: Object.freeze({ level: "Review", message: "Resolve the Pinterest board name." }),
+  CREATED_AT_INVALID: Object.freeze({ level: "Review", message: "Review the creation date." }),
+  DUPLICATE_TITLE: Object.freeze({ level: "Review", message: "Review Pins that use the same title." }),
+  DUPLICATE_CONTENT: Object.freeze({ level: "Review", message: "Review Pins with identical content." }),
+  POSSIBLE_TEST_CONTENT: Object.freeze({ level: "Review", message: "Remove test or placeholder content before publishing." }),
+});
+const AUDIT_CODES = Object.freeze(Object.keys(AUDIT_RULES));
 function safeThumbnail(value) {
   if (!value || typeof value !== "object" || !["image/jpeg", "image/png", "image/webp"].includes(value.mimeType) || typeof value.base64 !== "string" || !value.base64.length || value.base64.length > THUMBNAIL_MAX_BASE64_LENGTH || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.base64)) return null;
   try {
@@ -160,7 +175,13 @@ export function transition(current, event) {
     const next = preserveVerifiedConnection && state.verifiedConnectionState ? state.verifiedConnectionState : observationResult;
     const safe = safeObservation(event.value);
     const observationStatus = ["Failed", "Unavailable"].includes(event.value?.state) || !event.value?.ok ? "unavailable" : safe.pins.length ? "available" : "empty";
-    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation: safe, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
+    const priorAudit = state.observation?.audit;
+    const retainedAudit = observationStatus === "unavailable" && safe.audit.state === "NotRead" && priorAudit?.state !== "NotRead"
+      ? Object.freeze({ ...priorAudit, state: "TemporarilyUnavailable" })
+      : safe.audit;
+    const retainedPins = observationStatus === "unavailable" && !safe.pins.length && Array.isArray(state.observation?.pins) ? state.observation.pins : safe.pins;
+    const observation = Object.freeze({ ...safe, pins: retainedPins, audit: retainedAudit });
+    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
   }
   return state;
 }
@@ -185,7 +206,7 @@ export function safeObservation(value) {
   const pins = Array.isArray(value.pins) ? value.pins.slice(0, 25).flatMap(pin => {
     if (!pin || typeof pin !== "object" || typeof pin.pinId !== "string" || !pin.pinId.trim()) return [];
     const safe = { pinId: text(pin.pinId).slice(0, 128), boardName: typeof pin.boardName === "string" && pin.boardName.trim() ? text(pin.boardName).slice(0, 160) : "Unknown board", thumbnail: null };
-    for (const [key, maximum] of [["title", 160], ["description", 500], ["createdAt", 32], ["destinationDomain", 253]]) {
+    for (const [key, maximum] of [["title", 160], ["description", 1000], ["createdAt", 32], ["destinationDomain", 253]]) {
       if (typeof pin[key] === "string" && pin[key].trim()) safe[key] = text(pin[key]).slice(0, maximum);
     }
     safe.thumbnail = safeThumbnail(pin.thumbnail);
@@ -199,5 +220,30 @@ export function safeObservation(value) {
     failureCount: Array.isArray(value.failures) ? Math.min(value.failures.length, 25) : 0,
     provenance: value.provenance,
   });
-  return Object.freeze({ ...envelope, pins: Object.freeze(pins) });
+  return Object.freeze({ ...envelope, pins: Object.freeze(pins), audit: safeContentAudit(value.audit, pins) });
+}
+
+function safeContentAudit(value, pins) {
+  const emptyCounts = () => Object.freeze(Object.fromEntries(AUDIT_CODES.map(code => [code, 0])));
+  if (!value || typeof value !== "object") return Object.freeze({ state: "NotRead", analyzedPins: 0, readyPins: 0, attentionPins: 0, issueCounts: emptyCounts(), pins: Object.freeze([]) });
+  const state = ["NotRead", "Available", "TemporarilyUnavailable"].includes(value.state) ? value.state : "NotRead";
+  const allowedPins = new Set(pins.map(pin => pin.pinId));
+  const seenPins = new Set();
+  const counts = Object.fromEntries(AUDIT_CODES.map(code => [code, 0]));
+  const auditedPins = Array.isArray(value.pins) ? value.pins.slice(0, 25).flatMap(pin => {
+    const pinId = typeof pin?.pinId === "string" ? pin.pinId.trim().slice(0, 128) : "";
+    if (!pinId || !allowedPins.has(pinId) || seenPins.has(pinId)) return [];
+    seenPins.add(pinId);
+    const seenCodes = new Set();
+    const issues = Array.isArray(pin.issues) ? pin.issues.flatMap(issue => {
+      const rule = AUDIT_RULES[issue?.code];
+      if (!rule || seenCodes.has(issue.code)) return [];
+      seenCodes.add(issue.code);
+      counts[issue.code] += 1;
+      return [Object.freeze({ code: issue.code, level: rule.level, message: rule.message })];
+    }).sort((left, right) => AUDIT_CODES.indexOf(left.code) - AUDIT_CODES.indexOf(right.code)) : [];
+    return [Object.freeze({ pinId, status: issues.length ? "NeedsAttention" : "Ready", issues: Object.freeze(issues) })];
+  }) : [];
+  const attentionPins = auditedPins.filter(pin => pin.status === "NeedsAttention").length;
+  return Object.freeze({ state, analyzedPins: auditedPins.length, readyPins: auditedPins.length - attentionPins, attentionPins, issueCounts: Object.freeze(counts), pins: Object.freeze(auditedPins) });
 }

@@ -632,10 +632,12 @@ test("live composition routes verification and observation through the governed 
   assert.equal(JSON.stringify(observation).includes("must-not-cross"),false);
   assert.equal(JSON.stringify(observation).includes("provider-object"),false);
   assert.equal(JSON.stringify(observation).includes("i.pinimg.com"),false);
+  assert.equal(observation.audit.state,"Available");assert.equal(observation.audit.analyzedPins,25);assert.equal(observation.audit.attentionPins,25);
+  assert.equal(/score|base64|media|board-1|access-secret|provider-object|pinimg/i.test(JSON.stringify(observation.audit)),false);
   const rendererObservation=safeObservation(observation);assert.equal(rendererObservation.pins[0].thumbnail.base64,COMPLETE_JPEG_BASE64);assert.equal(rendererObservation.pins[0].thumbnail.base64.length,976);
   assert.equal(/i\.pinimg\.com|provider-object|media|thumbnailUrl/i.test(JSON.stringify(rendererObservation)),false);
   const duplicateObservation=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-repeat" });
-  assert.deepEqual(duplicateObservation.pins,observation.pins);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);assert.equal(thumbnailRequests,25);
+  assert.deepEqual(duplicateObservation.pins,observation.pins);assert.deepEqual(duplicateObservation.audit,observation.audit);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);assert.equal(thumbnailRequests,25);
   assert.equal(composition.integration.registry.all()[0].adapterId.value, "PinterestMarketSourceAdapter");
   assert.equal(composition.verificationRepository.current({ value: "ALIVO" } as never)?.state, "Available");
   await runtime.close();
@@ -676,4 +678,6 @@ test("renderer-safe Pin DTOs are allowlisted, HTTPS-domain-only, capped, and det
   assert.equal(pins.every(pin=>pin.boardName==="<b>Safe board text</b>"),true);
   for(const pin of pins)assert.deepEqual(Object.keys(pin).every(key=>["pinId","title","description","createdAt","boardName","destinationDomain","thumbnail"].includes(key)),true);
   assert.equal(/accessToken|refreshToken|callbackUrl|media|unknown|ownership|boardReference|private\/path|token=secret/.test(JSON.stringify(pins)),false);
+  const unicodePin=rendererSafePins([{type:"pin",observedAt:NOW,payloadReference:JSON.stringify({resourceId:"unicode",resourceType:"pin",title:"😀".repeat(101),description:"😀".repeat(801),link:"https://alivo.eu"})}]);
+  assert.equal(Array.from(unicodePin[0].title??"").length,101);assert.equal(Array.from(unicodePin[0].description??"").length,801);
 });

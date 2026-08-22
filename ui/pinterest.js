@@ -23,7 +23,7 @@ const viewCopy = Object.freeze({
   scheduled: "Scheduling remains governed elsewhere and is not changed by Pinterest observation.",
   published: "Publishing remains governed elsewhere and no write operation is exposed here.",
   performance: "Performance observation will appear when Pinterest returns a governed read-only result.",
-  attention: "Connection and observation states are shown above without exposing provider secrets.",
+  attention: "No Pins need attention",
 });
 
 let view = "overview";
@@ -73,6 +73,73 @@ function observationSummary() {
   return card;
 }
 
+function contentAuditSummary() {
+  const audit = connection.observation?.audit;
+  const card = createElement("article", "card content-readiness");
+  card.append(createElement("p", "eyebrow", "Deterministic content audit · Not performance analytics"), createElement("h2", "", "Content readiness"));
+  if (!audit || audit.state === "NotRead") {
+    card.append(createElement("p", "", "No content audit has been run yet."));
+    return card;
+  }
+  if (audit.state === "TemporarilyUnavailable") card.append(createElement("p", "quiet", "Content audit is temporarily unavailable. The last valid audit remains visible."));
+  if (!audit.analyzedPins) {
+    card.append(createElement("p", "", "No Pins are available for content audit."));
+    return card;
+  }
+  const required = audit.pins.reduce((total, pin) => total + pin.issues.filter(issue => issue.level === "Required").length, 0);
+  const review = audit.pins.reduce((total, pin) => total + pin.issues.filter(issue => issue.level === "Review").length, 0);
+  const metrics = createElement("div", "pin-kpis");
+  for (const [label, value] of [["Pins analyzed", audit.analyzedPins], ["Ready", audit.readyPins], ["Needs attention", audit.attentionPins], ["Required issues", required], ["Review issues", review]]) {
+    const metric = createElement("div", "pin-metric");
+    metric.append(createElement("span", "", label), createElement("strong", "", value));
+    metrics.append(metric);
+  }
+  card.append(metrics, createElement("small", "", "Performance data is not included."));
+  return card;
+}
+
+function auditForPin(pinId) {
+  return connection.observation?.audit?.pins?.find(pin => pin.pinId === pinId);
+}
+
+function pinCard(pin, showIssues = false) {
+  const card = createElement("article", "card pin-card");
+  const visual = createElement("div", "pin-thumbnail");
+  if (pin.thumbnail) {
+    const image = createElement("img", "pin-thumbnail-image", undefined);
+    image.src = `data:${pin.thumbnail.mimeType};base64,${pin.thumbnail.base64}`;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.alt = (pin.title || "").slice(0, 160);
+    visual.append(image);
+  } else visual.append(createElement("span", "pin-thumbnail-placeholder", "No image"));
+  const content = createElement("div", "pin-card-content");
+  const audit = auditForPin(pin.pinId);
+  const issueCount = audit?.issues?.length ?? 0;
+  if (audit) content.append(createElement("span", `badge ${issueCount ? "warning" : "success"}`, issueCount ? `Needs attention (${issueCount})` : "Ready"));
+  content.append(createElement("h2", "", pin.title || "Untitled Pin"));
+  if (pin.description) content.append(createElement("p", "", pin.description));
+  const details = createElement("div", "pin-metadata");
+  const segments = [];
+  const date = displayDate(pin.createdAt);
+  if (date) segments.push(`Datum: ${date}`);
+  if (pin.boardName) segments.push(`Board: ${pin.boardName}`);
+  if (pin.destinationDomain) segments.push(`Destination: ${pin.destinationDomain}`);
+  details.textContent = segments.join(" · ");
+  content.append(details);
+  if (showIssues && audit) {
+    const issues = createElement("div", "pin-audit-issues");
+    for (const issue of audit.issues) {
+      const row = createElement("p", `pin-audit-issue ${issue.level.toLowerCase()}`);
+      row.append(createElement("strong", "", issue.level), createElement("span", "", `: ${issue.message}`));
+      issues.append(row);
+    }
+    content.append(issues);
+  }
+  card.append(visual, content);
+  return card;
+}
+
 function allPinsView() {
   const fragment = document.createDocumentFragment();
   const observation = connection.observation;
@@ -95,31 +162,25 @@ function allPinsView() {
     return fragment;
   }
   const list = createElement("div", "pin-list");
-  for (const pin of pins) {
-    const card = createElement("article", "card pin-card");
-    const visual = createElement("div", "pin-thumbnail");
-    if (pin.thumbnail) {
-      const image = createElement("img", "pin-thumbnail-image", undefined);
-      image.src = `data:${pin.thumbnail.mimeType};base64,${pin.thumbnail.base64}`;
-      image.loading = "lazy";
-      image.decoding = "async";
-      image.alt = (pin.title || "").slice(0, 160);
-      visual.append(image);
-    } else visual.append(createElement("span", "pin-thumbnail-placeholder", "No image"));
-    const content = createElement("div", "pin-card-content");
-    content.append(createElement("h2", "", pin.title || "Untitled Pin"));
-    if (pin.description) content.append(createElement("p", "", pin.description));
-    const details = createElement("div", "pin-metadata");
-    const segments = [];
-    const date = displayDate(pin.createdAt);
-    if (date) segments.push(`Datum: ${date}`);
-    if (pin.boardName) segments.push(`Board: ${pin.boardName}`);
-    if (pin.destinationDomain) segments.push(`Destination: ${pin.destinationDomain}`);
-    details.textContent = segments.join(" · ");
-    content.append(details);
-    card.append(visual, content);
-    list.append(card);
+  for (const pin of pins) list.append(pinCard(pin));
+  fragment.append(list);
+  return fragment;
+}
+
+function attentionView() {
+  const fragment = document.createDocumentFragment();
+  const audit = connection.observation?.audit;
+  const pins = Array.isArray(connection.observation?.pins) ? connection.observation.pins : [];
+  const attentionIds = new Set(audit?.pins?.filter(pin => pin.status === "NeedsAttention").map(pin => pin.pinId) ?? []);
+  const attentionPins = pins.filter(pin => attentionIds.has(pin.pinId));
+  if (!attentionPins.length) {
+    const empty = createElement("article", "card empty");
+    empty.append(createElement("h2", "", "Attention"), createElement("p", "", "No Pins need attention"));
+    fragment.append(empty);
+    return fragment;
   }
+  const list = createElement("div", "pin-list");
+  for (const pin of attentionPins) list.append(pinCard(pin, true));
   fragment.append(list);
   return fragment;
 }
@@ -163,11 +224,15 @@ function scopedView() {
   const fragment = document.createDocumentFragment();
   fragment.append(connectionPanel());
   if (view === "overview") {
-    fragment.append(observationSummary());
+    fragment.append(observationSummary(), contentAuditSummary());
     return fragment;
   }
   if (view === "all") {
     fragment.append(allPinsView());
+    return fragment;
+  }
+  if (view === "attention") {
+    fragment.append(attentionView());
     return fragment;
   }
   const card = createElement("article", "card empty");
@@ -183,6 +248,8 @@ function render() {
   $("#pin-view-content").replaceChildren();
   (view === "overview" ? $("#pin-overview") : $("#pin-view-content")).append(scopedView());
   document.querySelectorAll("[data-pin-view]").forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.pinView === view)));
+  const attentionCount = $("#pin-attention-count");
+  if (attentionCount) attentionCount.textContent = String(connection.observation?.audit?.attentionPins ?? 0);
   bind();
   history.replaceState({}, "", `#pinterest?${new URLSearchParams({ view })}`);
 }
@@ -260,6 +327,7 @@ async function readObservation() {
     render();
   } finally {
     observationInFlight = false;
+    render();
   }
 }
 

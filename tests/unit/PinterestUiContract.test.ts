@@ -123,7 +123,7 @@ test("Pinterest UI thumbnail boundary accepts only bounded image DTO data",()=>{
   assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/png",base64:COMPLETE_PNG_BASE64.slice(0,-16)}}]}).pins[0].thumbnail,null);
   assert.equal(safeObservation({pins:[{pinId:"bad",boardName:"Board",thumbnail:{mimeType:"image/webp",base64:COMPLETE_WEBP_BASE64.slice(0,-4)}}]}).pins[0].thumbnail,null);
   assert.equal(safe.pins[0].thumbnail.base64.length,976);
-  assert.match(stateSource,/return Object\.freeze\(\{ \.\.\.envelope, pins: Object\.freeze\(pins\) \}\)/);
+  assert.match(stateSource,/return Object\.freeze\(\{ \.\.\.envelope, pins: Object\.freeze\(pins\), audit: safeContentAudit\(value\.audit, pins\) \}\)/);
   assert.doesNotMatch(stateSource,/base64\.(?:trim|slice)|text\(thumbnail\.base64\)|slice\(0,\s*240\).*base64/);
 });
 

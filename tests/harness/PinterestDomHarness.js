@@ -105,7 +105,7 @@ class HarnessDocument extends HarnessNode {
 
 function createDocument() {
   const document = new HarnessDocument();
-  const ids = ["pin-loading", "pin-error", "pin-overview", "pin-view-content"];
+  const ids = ["pin-loading", "pin-error", "pin-overview", "pin-view-content", "pin-attention-count"];
   document.append(...ids.map(id => {
     const node = new HarnessNode("div");
     node.setAttribute("id", id);

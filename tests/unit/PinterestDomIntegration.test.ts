@@ -295,3 +295,36 @@ test("All Pins creates only validated data images and neutral placeholders",asyn
   assert.equal(harness.document.querySelectorAll(".pin-thumbnail-placeholder").length,1);assert.equal(harness.hasText("No image"),true);assert.equal(harness.hasText(malicious),true);
   assert.equal(images.some(image=>String(image.src).includes("pinimg.com")),false);assert.equal(harness.document.querySelectorAll("a").length,0);
 });
+
+test("content readiness overview and Attention render bounded local audit guidance as text",async()=>{
+  const malicious='<img src=x onerror="steal()">';
+  const fixedMessage="Add a Pin title.";
+  const audit={state:"Available",analyzedPins:2,readyPins:1,attentionPins:1,issueCounts:{TITLE_MISSING:1,TITLE_TOO_LONG:0,DESTINATION_MISSING:0,DESTINATION_OUTSIDE_ALIVO:0,DESCRIPTION_MISSING:0,DESCRIPTION_TOO_LONG:0,THUMBNAIL_MISSING:0,BOARD_UNKNOWN:0,CREATED_AT_INVALID:0,DUPLICATE_TITLE:0,DUPLICATE_CONTENT:0,POSSIBLE_TEST_CONTENT:0},pins:[{pinId:"pin-bad",status:"NeedsAttention",issues:[{code:"TITLE_MISSING",level:"Required",message:"provider-controlled message"}]},{pinId:"pin-ready",status:"Ready",issues:[]}]};
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:async()=>({ok:true,state:"Completed",pins:[{pinId:"pin-bad",title:malicious,description:"safe",createdAt:"2026-08-22T12:00:00.000Z",boardName:"Board",destinationDomain:"alivo.eu",thumbnail:null},{pinId:"pin-ready",title:"Ready Pin",description:"safe",createdAt:"2026-08-21T12:00:00.000Z",boardName:"Board",destinationDomain:"shop.alivo.eu",thumbnail:null}],audit})})).start();
+  assert.equal(harness.hasText("No content audit has been run yet."),true);
+  await harness.clickAction("verify");
+  assert.equal(harness.callCount("readObservation"),0);
+  assert.equal(harness.hasText("No content audit has been run yet."),true);
+  await harness.clickAction("refresh");
+  assert.equal(harness.callCount("readObservation"),0);
+  await harness.clickAction("observe");
+  assert.equal(harness.hasText("Deterministic content audit · Not performance analytics"),true);
+  assert.equal(harness.hasText("Pins analyzed2Ready1Needs attention1Required issues1Review issues0"),true);
+  assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
+  harness.document.querySelector('[data-pin-view="all"]').click();await harness.settle();
+  assert.equal(harness.hasText("Needs attention (1)"),true);assert.equal(harness.hasText("Ready"),true);
+  harness.document.querySelector('[data-pin-view="attention"]').click();await harness.settle();
+  assert.equal(harness.document.querySelectorAll(".pin-card").length,1);
+  assert.equal(harness.hasText(malicious),true);assert.equal(harness.hasText(fixedMessage),true);assert.equal(harness.hasText("provider-controlled message"),false);
+  assert.equal(harness.document.querySelectorAll("a").length,0);
+});
+
+test("temporary observation failure retains the last safe audit and duplicate read snapshot",async()=>{
+  const audit={state:"Available",analyzedPins:1,readyPins:0,attentionPins:1,issueCounts:{TITLE_MISSING:0,TITLE_TOO_LONG:0,DESTINATION_MISSING:0,DESTINATION_OUTSIDE_ALIVO:0,DESCRIPTION_MISSING:1,DESCRIPTION_TOO_LONG:0,THUMBNAIL_MISSING:0,BOARD_UNKNOWN:0,CREATED_AT_INVALID:0,DUPLICATE_TITLE:0,DUPLICATE_CONTENT:0,POSSIBLE_TEST_CONTENT:0},pins:[{pinId:"pin-1",status:"NeedsAttention",issues:[{code:"DESCRIPTION_MISSING",level:"Review",message:"ignored"}]}]};
+  const pin={pinId:"pin-1",title:"Retained Pin",createdAt:"2026-08-22T12:00:00.000Z",boardName:"Board",destinationDomain:"alivo.eu",thumbnail:null};
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:sequence({ok:true,state:"Completed",pins:[pin],audit},{ok:true,state:"CompletedWithWarnings",pins:[pin],audit},{ok:false,state:"Unavailable"})})).start();
+  await harness.clickAction("verify");await harness.settle();await harness.clickAction("observe");await harness.settle();await harness.clickAction("observe");await harness.settle();
+  assert.equal(harness.hasText("Pins analyzed1"),true);assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
+  await harness.clickAction("observe");await harness.settle();
+  assert.equal(harness.hasText("last valid audit remains visible"),true);assert.equal(harness.hasText("Pins analyzed1"),true);assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
+});

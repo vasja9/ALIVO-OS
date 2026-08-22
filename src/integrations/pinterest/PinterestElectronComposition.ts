@@ -17,6 +17,7 @@ import { registerPinterestProductionProvider } from "./PinterestProductionProvid
 import type { PinterestProductionProviderRegistration } from "./PinterestProductionProviderRegistration.ts";
 import { PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES, fetchPinterestThumbnail, fetchPinterestThumbnails, safeThumbnailDto, selectPinterestThumbnail } from "./PinterestThumbnailSecurity.ts";
 import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./PinterestThumbnailSecurity.ts";
+import { auditPinterestContent, emptyPinterestContentAudit, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
 const APPROVED_CAPABILITIES = Object.freeze(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"].map((value) => new MarketSourceCapability(value)));
@@ -34,6 +35,11 @@ const optionalText = (value:unknown, maximum:number):string|undefined => {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized && !/[\u0000-\u001f\u007f]/.test(normalized) ? normalized.slice(0, maximum) : undefined;
+};
+const optionalCodePointText = (value:unknown, maximum:number):string|undefined => {
+  if (typeof value !== "string") return undefined;
+  const normalized=value.trim();
+  return normalized&&!/[\u0000-\u001f\u007f]/.test(normalized)?Array.from(normalized).slice(0,maximum).join(""):undefined;
 };
 const destinationDomain = (value:unknown):string|undefined => {
   if (typeof value !== "string" || value.length > 2048) return undefined;
@@ -64,7 +70,7 @@ export function rendererSafePins(observations:readonly {type:string;observedAt:D
     if(canonical.resourceType!=="pin")continue;
     const pinId=optionalText(canonical.resourceId,128);if(!pinId)continue;
     const observedAt=observation.observedAt instanceof Date&&Number.isFinite(observation.observedAt.getTime())?observation.observedAt.toISOString():undefined;
-    const title=optionalText(canonical.title,160),description=optionalText(canonical.description,500),boardId=optionalText(canonical.boardReference,128),domain=destinationDomain(canonical.link);
+    const title=optionalCodePointText(canonical.title,160),description=optionalCodePointText(canonical.description,1000),boardId=optionalText(canonical.boardReference,128),domain=destinationDomain(canonical.link);
     pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(observedAt&&{createdAt:observedAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain}),thumbnail:null}));
   }
   return Object.freeze(pins.sort((left,right)=>(right.createdAt??"").localeCompare(left.createdAt??"")||left.pinId.localeCompare(right.pinId)).slice(0,25));
@@ -168,6 +174,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
   );
   let sequence = 0;
   let pinSnapshot:readonly PinterestRendererSafePin[]=Object.freeze([]);
+  let contentAudit=emptyPinterestContentAudit();
   const boardLookup=new Map<string,string>();
   const resolveBoardNames=async(ids:readonly string[],correlationIdentifier:string)=>{
     const unresolved=new Set(ids.filter(id=>!boardLookup.has(id)));if(!unresolved.size)return;
@@ -237,13 +244,20 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         requestedAt: clock(),
       });
       const result = await observationWorkflow.run(observationRequest);
-      if (!(result instanceof PinterestObservationWorkflowResult)) return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined, pins: pinSnapshot };
+      if (!(result instanceof PinterestObservationWorkflowResult)) {
+        contentAudit=withPinterestContentAuditState(contentAudit,"TemporarilyUnavailable");
+        return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined, pins: pinSnapshot, audit: contentAudit };
+      }
       const ids=boardIds(result.acceptedObservations);if(ids.length)await resolveBoardNames(ids,context.correlationIdentifier);
       const normalizedPins=rendererSafePins(result.acceptedObservations,boardLookup);
       if(normalizedPins.length>0){
         const mediaByPin=new Map<string,unknown>();for(const observation of result.acceptedObservations){const canonical=canonicalPayload(observation),id=optionalText(canonical?.resourceId,128);if(id)mediaByPin.set(id,canonical?.media);}
         pinSnapshot=await mergePinThumbnails(normalizedPins,mediaByPin,pinSnapshot,request.thumbnailFetcher??fetchPinterestThumbnail);
-      }else if(result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0)pinSnapshot=normalizedPins;
+        contentAudit=auditPinterestContent(pinSnapshot.map(pin=>({pinId:pin.pinId,title:pin.title,description:pin.description,createdAt:pin.createdAt,boardName:pin.boardName,destinationDomain:pin.destinationDomain,thumbnailPresent:pin.thumbnail!==null})));
+      }else if(result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0){
+        pinSnapshot=normalizedPins;
+        contentAudit=auditPinterestContent([]);
+      }else if(["Failed","Unavailable"].includes(result.finalState))contentAudit=withPinterestContentAuditState(contentAudit,"TemporarilyUnavailable");
       return {
         state: result.finalState,
         summary: result.summary.properties,
@@ -251,6 +265,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         failures: result.failures,
         provenance: result.properties.provenance,
         pins: pinSnapshot,
+        audit: contentAudit,
       };
     },
     verificationRepository,
