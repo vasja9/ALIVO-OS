@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { canonicalFrameUrl, correlateLoadedSubframe, correlatesLoadedSubframe } from "../integration/pinterest-electron-frame-sync.cjs";
 
-const expectedUrl = "file:///tmp/pinterest-ipc-integration-frame.html";
+const expectedUrl = pathToFileURL(path.join(os.tmpdir(), "pinterest-ipc-integration-frame.html")).href;
+const otherUrl = pathToFileURL(path.join(os.tmpdir(), "other.html")).href;
 const matchingFrame = {
   url: expectedUrl,
 };
@@ -86,7 +90,7 @@ test("rejects a malformed, non-file, or non-matching URL", () => {
     frame: matchingFrame,
   };
   assert.equal(correlatesLoadedSubframe({ ...event, frame: { url: "not a URL" } }, expectedUrl), false);
-  assert.equal(correlatesLoadedSubframe({ ...event, frame: { url: "file:///tmp/other.html" } }, expectedUrl), false);
+  assert.equal(correlatesLoadedSubframe({ ...event, frame: { url: otherUrl } }, expectedUrl), false);
   assert.equal(correlatesLoadedSubframe({ ...event, frame: { url: "data:text/html,frame" } }, expectedUrl), false);
   assert.equal(correlatesLoadedSubframe({ ...event, frame: { url: "file://foreign-host/tmp/frame.html" } }, expectedUrl), false);
 });

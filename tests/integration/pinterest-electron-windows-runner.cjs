@@ -254,10 +254,9 @@ async function run() {
     const trustedMainFrame = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
     assert.deepEqual(trustedMainFrame, reconfiguredStatus);
 
-    const trustedLocalIframe = await addAndFindFrame(
-      contents,
-      pathToFileURL(path.join(projectRoot, "ui", "index.html")).href,
-    );
+    const trustedLocalIframeUrl = pathToFileURL(path.join(projectRoot, "ui", "index.html"));
+    trustedLocalIframeUrl.hash = "pinterest?view=overview";
+    const trustedLocalIframe = await addAndFindFrame(contents, trustedLocalIframeUrl.href);
     const trustedLocalIframeResult = await invokeInFrame(trustedLocalIframe, "window.alivoPinterest.connectionStatus()");
     assert.deepEqual(
       trustedLocalIframeResult,
