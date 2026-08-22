@@ -103,3 +103,15 @@ test("Pinterest UI redacts sensitive provider fields and never exposes them in r
   assert.equal(safe.warnings, undefined);
   assert.doesNotMatch(source, /console\.(log|error|warn)|accessToken|refreshToken|clientSecret|sessionSecret|codeVerifier|callbackUrl/);
 });
+
+test("Pinterest UI preserves a verified connection when observation data is unavailable", () => {
+  let state = transition(createPinterestUiState(), { type: "VERIFY_RESULT", value: { ok: true, state: "Available", authenticationState: "Authenticated" } });
+  state = transition(state, { type: "OBSERVATION_REQUEST" });
+  for (const value of [{ ok: true, state: "Failed" }, { ok: true, state: "Unavailable" }, { ok: true, state: "NoData" }, { ok: false, code: "INVALID_RESPONSE" }]) {
+    const result = transition(state, { type: "OBSERVATION_RESULT", value });
+    assert.equal(result.uiState, PINTEREST_UI_STATE.Connected);
+    assert.match(result.message, /observation is unavailable/i);
+  }
+  assert.equal(transition(state, { type: "OBSERVATION_RESULT", value: { ok: true, state: "ReauthorizationRequired" } }).uiState, PINTEREST_UI_STATE.ReauthorizationRequired);
+  assert.equal(transition(state, { type: "OBSERVATION_RESULT", value: { ok: true, state: "RateLimited" } }).uiState, PINTEREST_UI_STATE.RateLimited);
+});

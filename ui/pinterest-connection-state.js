@@ -63,6 +63,7 @@ export function createPinterestUiState(contractAvailable = true) {
   return Object.freeze({
     uiState: contractAvailable ? PINTEREST_UI_STATE.Disconnected : PINTEREST_UI_STATE.PreloadMissing,
     pendingOAuth: false,
+    verifiedConnectionState: undefined,
     observation: undefined,
     message: contractAvailable ? "Pinterest is not connected" : "Pinterest preload contract is unavailable",
   });
@@ -131,11 +132,14 @@ export function transition(current, event) {
   if (event.type === "VERIFY_REQUEST") return Object.freeze({ ...state, uiState: PINTEREST_UI_STATE.Verifying, message: "Checking the Pinterest read-only connection" });
   if (event.type === "VERIFY_RESULT") {
     const next = verificationState(event.value);
-    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.Connected ? "Pinterest connection verified" : "Pinterest connection verification did not complete") });
+    const verifiedConnectionState = next === PINTEREST_UI_STATE.Connected || next === PINTEREST_UI_STATE.ConnectedLimitedPermissions ? next : undefined;
+    return Object.freeze({ ...state, uiState: next, verifiedConnectionState, pendingOAuth: false, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.Connected ? "Pinterest connection verified" : "Pinterest connection verification did not complete") });
   }
   if (event.type === "OBSERVATION_REQUEST") return Object.freeze({ ...state, uiState: PINTEREST_UI_STATE.Verifying, message: "Reading Pinterest observation data" });
   if (event.type === "OBSERVATION_RESULT") {
-    const next = observationState(event.value);
+    const observationResult = observationState(event.value);
+    const preserveVerifiedConnection = ["Failed", "Unavailable", "NoData"].includes(event.value?.state) || (!event.value?.ok && ![PINTEREST_UI_STATE.RateLimited, PINTEREST_UI_STATE.ReauthorizationRequired].includes(observationResult));
+    const next = preserveVerifiedConnection && state.verifiedConnectionState ? state.verifiedConnectionState : observationResult;
     return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation: next === PINTEREST_UI_STATE.ObservationRead ? safeObservation(event.value) : undefined, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
   }
   return state;

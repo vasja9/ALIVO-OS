@@ -250,6 +250,19 @@ async function run() {
     );
     assert.equal(configured.ok, true);
 
+    await contents.executeJavaScript("window.location.hash = '#settings/pinterest'");
+    await waitFor("trusted Settings hash route", () => contents.getURL().endsWith("#settings/pinterest"));
+    const localConfigStatus = await invokeInFrame(contents.mainFrame, "window.alivoPinterestLocalConfig.status()");
+    assert.deepEqual(localConfigStatus, {
+      ok: true,
+      configured: true,
+      encryptionAvailable: true,
+      appIdConfigured: true,
+      appSecretConfigured: true,
+      redirectUriConfigured: true,
+      sessionMaterialConfigured: true,
+    });
+
     const reconfiguredStatus = { ok: true, state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" };
     const trustedMainFrame = await invokeInFrame(contents.mainFrame, "window.alivoPinterest.connectionStatus()");
     assert.deepEqual(trustedMainFrame, reconfiguredStatus);

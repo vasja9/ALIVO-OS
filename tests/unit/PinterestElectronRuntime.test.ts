@@ -519,6 +519,20 @@ test("Pinterest IPC accepts only the trusted local main frame with canonical Win
   assert.equal(isTrustedUiUrl(trustedUrl, allowedPaths, "win32"), true);
   assert.doesNotThrow(() => assertTrustedPinterestSender({ sender: webContents, senderFrame: frame }, mainWindow, allowedPaths, "win32"));
 
+  for (const fragment of ["#settings/pinterest", "#pinterest?view=overview"]) {
+    const routedUrl = `${trustedUrl}${fragment}`;
+    const routedMainFrame = { frameTreeNodeId: 41, url: routedUrl };
+    const routedWebContents = { mainFrame: routedMainFrame };
+    const routedMainWindow = { webContents: routedWebContents };
+    assert.equal(isTrustedUiUrl(routedUrl, allowedPaths, "win32"), true, routedUrl);
+    assert.doesNotThrow(() => assertTrustedPinterestSender(
+      { sender: routedWebContents, senderFrame: { frameTreeNodeId: 41, url: routedUrl } },
+      routedMainWindow,
+      allowedPaths,
+      "win32",
+    ));
+  }
+
   for (const candidateUrl of [
     "file:///D:/workspace/ui/index.html",
     "file://server/share/ui/index.html",
@@ -526,7 +540,6 @@ test("Pinterest IPC accepts only the trusted local main frame with canonical Win
     "file:///C:/workspace/ui/%69ndex.html",
     "file:///C:/workspace/ui/%2569ndex.html",
     "file:///C:/workspace/ui/index.html?unexpected=query",
-    "file:///C:/workspace/ui/index.html#unexpected-hash",
     "https://127.0.0.1/ui/index.html",
   ]) {
     assert.equal(isTrustedUiUrl(candidateUrl, allowedPaths, "win32"), false, candidateUrl);

@@ -22,16 +22,17 @@ function normalizeTrustedUiUrl(url, platform = process.platform) {
       url !== parsed.href ||
       parsed.protocol !== "file:" ||
       parsed.hostname ||
-      parsed.search ||
-      parsed.hash
+      parsed.search
     ) return null;
 
+    parsed.hash = "";
+    const canonicalFileUrl = parsed.href;
     const windows = platform === "win32";
     const decodedPath = fileURLToPath(parsed, { windows });
     if (/%[0-9A-Fa-f]{2}/.test(decodedPath)) return null;
     const normalizedPath = normalizeAllowedPath(decodedPath, platform);
     if (!normalizedPath) return null;
-    return pathToFileURL(normalizedPath, { windows }).href === parsed.href ? normalizedPath : null;
+    return pathToFileURL(normalizedPath, { windows }).href === canonicalFileUrl ? normalizedPath : null;
   } catch {
     return null;
   }
