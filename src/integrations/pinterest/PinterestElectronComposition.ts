@@ -20,6 +20,7 @@ import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./Pintere
 import { auditPinterestContent, emptyPinterestContentAudit, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
 import { emptyPinterestAccountAnalytics, parsePinterestAccountAnalytics, PINTEREST_ACCOUNT_ORGANIC_METRICS, withPinterestAccountAnalyticsState } from "./PinterestAccountAnalytics.ts";
 import { emptyPinterestOrganicAnalytics, parsePinterestOrganicAnalytics, pinterestCompletedUtcWindow, PINTEREST_ORGANIC_METRICS, withPinterestOrganicAnalyticsState } from "./PinterestOrganicAnalytics.ts";
+import { emptyPinterestTopPins, parsePinterestTopPins, PINTEREST_TOP_PINS_METRICS, withPinterestTopPinsState } from "./PinterestTopPinsAnalytics.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
 const APPROVED_CAPABILITIES = Object.freeze(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"].map((value) => new MarketSourceCapability(value)));
@@ -179,6 +180,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
   let contentAudit=emptyPinterestContentAudit();
   let organicAnalytics=emptyPinterestOrganicAnalytics();
   let accountAnalytics=emptyPinterestAccountAnalytics();
+  let topPinsAnalytics=emptyPinterestTopPins();
   const boardLookup=new Map<string,string>();
   const resolveBoardNames=async(ids:readonly string[],correlationIdentifier:string)=>{
     const unresolved=new Set(ids.filter(id=>!boardLookup.has(id)));if(!unresolved.size)return;
@@ -219,7 +221,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         requestedAt: clock(),
       });
       const result = await verifier.verify(requestObject);
-      if (["AuthenticationRequired", "CredentialCorrectionRequired", "ReauthorizationRequired", "MFARequired", "PermissionDenied", "NonRecoverableFailure"].includes(result.properties.authenticationState)) accountAnalytics=emptyPinterestAccountAnalytics();
+      if (["AuthenticationRequired", "CredentialCorrectionRequired", "ReauthorizationRequired", "MFARequired", "PermissionDenied", "NonRecoverableFailure"].includes(result.properties.authenticationState)) { accountAnalytics=emptyPinterestAccountAnalytics(); topPinsAnalytics=emptyPinterestTopPins(); }
       return {
         state: result.state,
         authenticationState: result.properties.authenticationState,
@@ -261,11 +263,11 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         const mediaByPin=new Map<string,unknown>();for(const observation of result.acceptedObservations){const canonical=canonicalPayload(observation),id=optionalText(canonical?.resourceId,128);if(id)mediaByPin.set(id,canonical?.media);}
         pinSnapshot=await mergePinThumbnails(normalizedPins,mediaByPin,pinSnapshot,request.thumbnailFetcher??fetchPinterestThumbnail);
         contentAudit=auditPinterestContent(pinSnapshot.map(pin=>({pinId:pin.pinId,title:pin.title,description:pin.description,createdAt:pin.createdAt,boardName:pin.boardName,destinationDomain:pin.destinationDomain,thumbnailPresent:pin.thumbnail!==null})));
-        if(snapshotChanged)organicAnalytics=emptyPinterestOrganicAnalytics();
+        if(snapshotChanged){organicAnalytics=emptyPinterestOrganicAnalytics();topPinsAnalytics=emptyPinterestTopPins();}
       }else if(result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0){
         pinSnapshot=normalizedPins;
         contentAudit=auditPinterestContent([]);
-        organicAnalytics=emptyPinterestOrganicAnalytics();
+        organicAnalytics=emptyPinterestOrganicAnalytics();topPinsAnalytics=emptyPinterestTopPins();
       }else if(["Failed","Unavailable"].includes(result.finalState))contentAudit=withPinterestContentAuditState(contentAudit,"TemporarilyUnavailable");
       return {
         state: result.finalState,
@@ -308,7 +310,21 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"Failed");
       }
     },
-    clearAccountPerformance() { accountAnalytics=emptyPinterestAccountAnalytics(); },
+    async readTopPins(input:Record<string, unknown> = {}) {
+      if (!pinSnapshot.length) return topPinsAnalytics=emptyPinterestTopPins();
+      const context=common(input),window=pinterestCompletedUtcWindow(clock()),pinIds=pinSnapshot.map(pin=>pin.pinId).slice(0,25);
+      try {
+        const interrupted=new InterruptedOperationReference({tcoTaskReference:"ElectronUI",sourceAdapterReference:ADAPTER_ID,businessPackageId,correlationIdentifier:context.correlationIdentifier});
+        const authentication=await request.registration.authentication.authenticate(new ExternalAuthenticationRequest({id:new ExternalAuthenticationId(`electron-pinterest-top-pins:${++sequence}`),credentialId,method:ExternalAuthenticationMethod.OAuth,businessPackageId,sourceAdapterReference:ADAPTER_ID,requestedCapability:"PerformanceObservation",tcoTaskReference:"ElectronUI",sourceRequestReference:`electron-pinterest-top-pins:${sequence}`,correlationIdentifier:context.correlationIdentifier,requestingAuthorityReference:"ElectronUI",requestedAt:clock(),interruptedOperation:interrupted}));
+        if(!authentication.successful)return topPinsAnalytics=emptyPinterestTopPins("ReauthorizationRequired");
+        const response=await request.registration.transport.execute({baseUrl:request.apiBaseUrl,environment:PinterestEnvironment.Production,path:"/v5/user_account/analytics/top_pins",query:{start_date:window.startDate,end_date:window.endDate,sort_by:"OUTBOUND_CLICK",from_claimed_content:"BOTH",pin_format:"ALL",app_types:"ALL",content_type:"ORGANIC",metric_types:PINTEREST_TOP_PINS_METRICS.join(","),num_of_pins:"25"},timeoutMs:30_000,session:authentication.session});
+        if(response.status===401||response.status===403)return topPinsAnalytics=withPinterestTopPinsState(topPinsAnalytics,"Unavailable");
+        if(response.status===429)return topPinsAnalytics=withPinterestTopPinsState(topPinsAnalytics,"RateLimited");
+        if(response.status!==200)return topPinsAnalytics=withPinterestTopPinsState(topPinsAnalytics,"Failed");
+        return topPinsAnalytics=parsePinterestTopPins(response.body,window,pinIds);
+      } catch { return topPinsAnalytics=withPinterestTopPinsState(topPinsAnalytics,"Failed"); }
+    },
+    clearAccountPerformance() { accountAnalytics=emptyPinterestAccountAnalytics(); topPinsAnalytics=emptyPinterestTopPins(); },
     verificationRepository,
     observationWorkflow,
     integration,

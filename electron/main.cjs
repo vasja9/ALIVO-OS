@@ -117,6 +117,14 @@ ipcMain.handle("pinterest:account-performance:read", async (_event, request) => 
     return { ok: false, state: "Failed" };
   }
 });
+ipcMain.handle("pinterest:top-pins:read", async (_event, request) => {
+  try {
+    assertTrustedPinterestSender(_event, mainWindow, trustedUiPaths);
+    return await getPinterestIpcController().readTopPins(request);
+  } catch {
+    return { ok: false, state: "Failed" };
+  }
+});
 ipcMain.handle("pinterest:performance:read", async (_event, request) => {
   try {
     assertTrustedPinterestSender(_event, mainWindow, trustedUiPaths);

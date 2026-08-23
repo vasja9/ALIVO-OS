@@ -15,9 +15,10 @@ function preloadFor({
   verifyConnection = async () => available,
   readObservation = async () => ({ ok: true, state: "Completed", summary: { acceptedObservations: 2 } }),
   readAccountPerformance = async () => ({ ok: true, state: "NotRead", window: null, latestAvailableDate: null, totals: null, daily: [], stale: false }),
+  readTopPins = async () => ({ ok: true, state: "NotRead", window: null, sortBy: null, pins: [], stale: false }),
   readPerformance = async () => ({ ok: true, state: "NotRead", window: null, totals: null, pins: [] }),
 } = {}) {
-  return { startOAuth, connectionStatus, verifyConnection, readObservation, readAccountPerformance, readPerformance };
+  return { startOAuth, connectionStatus, verifyConnection, readObservation, readAccountPerformance, readTopPins, readPerformance };
 }
 
 test("DOM harness normalizes Windows ESM line endings and rejects unhandled imports", () => {
@@ -440,4 +441,16 @@ test("analytics authorization denial is shown as capability unavailable without 
     assert.equal(harness.hasText("Organic Pin analytics is unavailable for this Pinterest application."),true);
     for(const forbidden of ["Reauthorize Pinterest","Pinterest disconnected","Connect Pinterest again"])assert.equal(harness.hasText(forbidden),false);
   }
+});
+
+test("Top Pins is explicit, snapshot-joined, endpoint-ordered, null-safe, and never renders raw IDs",async()=>{
+  const pins=[{pinId:"secret-pin-1",title:"First safe title",boardName:"Safe board",thumbnail:null},{pinId:"secret-pin-2",title:"Second safe title",boardName:"Other board",thumbnail:null}];
+  const top={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},sortBy:"OUTBOUND_CLICK",pins:[{pinId:"secret-pin-2",impressions:0,saves:null,pinClicks:2,outboundClicks:3},{pinId:"unknown-secret",impressions:999,saves:999,pinClicks:999,outboundClicks:999}],stale:false,providerPayload:{token:"hidden"}};
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:sequence({ok:true,state:"Completed",pins},{ok:true,state:"CompletedWithWarnings",pins}),readTopPins:sequence(top,{...top,state:"Failed",stale:true})})).start();
+  await harness.clickAction("refresh");await harness.clickAction("verify");await harness.clickAction("observe");harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
+  assert.equal(harness.callCount("readTopPins"),0);assert.equal(harness.hasText("Top organic Pins · Read-only"),true);assert.equal(harness.hasText("Read Top Pins"),true);
+  await harness.clickAction("top-pins");assert.equal(harness.callCount("readTopPins"),1);const table=harness.document.querySelector(".top-pins-table");assert.equal(table.tagName,"TABLE");assert.deepEqual(table.children[0].children[0].children.map(cell=>cell.textContent),["Rank","Pin","Board","Impressions","Saves","Pin clicks","Outbound clicks"]);assert.deepEqual(table.children[1].children[0].children.map(cell=>cell.textContent),["1","Second safe title","Other board","0","—","2","3"]);
+  for(const hidden of ["secret-pin-1","secret-pin-2","unknown-secret","999","hidden","providerPayload"])assert.equal(harness.hasText(hidden),false);assert.equal(harness.hasText("24.07.26 to 22.08.26 · 30 completed UTC days"),true);assert.equal(harness.document.querySelectorAll("a").length,0);
+  await harness.clickAction("observe");assert.equal(harness.callCount("readTopPins"),1);assert.notEqual(harness.document.querySelector(".top-pins-table"),undefined);
+  await harness.clickAction("top-pins");assert.equal(harness.callCount("readTopPins"),2);assert.equal(harness.hasText("last valid result remains visible as stale data"),true);
 });

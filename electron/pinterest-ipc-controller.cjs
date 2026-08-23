@@ -67,6 +67,10 @@ function createPinterestIpcController({
         return { ok: false, state: "Failed" };
       }
     },
+    async readTopPins(request) {
+      try { return { ok: true, ...(await getLifecycle().readTopPins(context.resolve(request))) }; }
+      catch { return { ok: false, state: "Failed" }; }
+    },
     async readPerformance(request) {
       try {
         return { ok: true, ...(await getLifecycle().readPerformance(context.resolve(request))) };

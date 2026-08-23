@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("alivoPinterest", Object.freeze({
   verifyConnection: (request) => ipcRenderer.invoke("pinterest:connection:verify", request),
   readObservation: (request) => ipcRenderer.invoke("pinterest:observation:read", request),
   readAccountPerformance: (request) => ipcRenderer.invoke("pinterest:account-performance:read", request),
+  readTopPins: (request) => ipcRenderer.invoke("pinterest:top-pins:read", request),
   readPerformance: (request) => ipcRenderer.invoke("pinterest:performance:read", request),
 }));
 contextBridge.exposeInMainWorld("alivoPinterestLocalConfig", Object.freeze({

@@ -33,6 +33,7 @@ let oauthInFlight = false;
 let verifyInFlight = false;
 let observationInFlight = false;
 let accountPerformanceInFlight = false;
+let topPinsInFlight = false;
 let performanceInFlight = false;
 let accountTrendMetric = "impressions";
 let pollAttempts = 0;
@@ -246,7 +247,7 @@ function accountDailyTable(daily) {
 function accountPerformanceView() {
   const performance=connection.accountPerformance,card=createElement("article","card pinterest-account-performance");
   card.append(createElement("p","eyebrow","Organic account metrics · Read-only"),createElement("h2","","Account performance"));
-  const analyticsBusy=accountPerformanceInFlight||performanceInFlight;
+  const analyticsBusy=accountPerformanceInFlight||topPinsInFlight||performanceInFlight;
   card.append(actionButton(accountPerformanceInFlight?"Reading account performance":"Read account performance","account-performance",!analyticsBusy&&actionAllowed(connection,"observe")));
   if(performance?.state==="NotRead"){card.append(createElement("p","","No organic account performance has been read yet."));return card}
   if(performance?.stale)card.append(createElement("p","quiet","Account performance is temporarily unavailable. The last valid account analytics snapshot remains visible as stale data."));
@@ -266,7 +267,7 @@ function accountPerformanceView() {
 function pinPerformanceView() {
   const pins=connection.observation?.pins??[],performance=connection.performance,card=createElement("article","card pinterest-organic-performance");
   card.append(createElement("p","eyebrow","Per-Pin metrics · Beta · Read-only"),createElement("h2","","Pin performance"));
-  const analyticsBusy=accountPerformanceInFlight||performanceInFlight;
+  const analyticsBusy=accountPerformanceInFlight||topPinsInFlight||performanceInFlight;
   card.append(actionButton(performanceInFlight?"Reading Pin performance":"Read Pin performance","performance",pins.length>0&&!analyticsBusy&&actionAllowed(connection,"observe")));
   if(!pins.length){card.append(createElement("p","","Read Pins first. Use Read observation before reading Pin performance."));return card}
   if(performance?.state==="NotRead"){card.append(createElement("p","","No organic Pin performance has been read yet."));return card}
@@ -284,9 +285,29 @@ function pinPerformanceView() {
   return card;
 }
 
+function topPinsView(){
+  const snapshot=connection.observation?.pins??[],result=connection.topPins,card=createElement("article","card pinterest-top-pins");
+  card.append(createElement("p","eyebrow","Top organic Pins · Read-only"),createElement("h2","","Top Pins"));
+  const analyticsBusy=accountPerformanceInFlight||topPinsInFlight||performanceInFlight;
+  card.append(actionButton(topPinsInFlight?"Reading Top Pins":"Read Top Pins","top-pins",snapshot.length>0&&!analyticsBusy&&actionAllowed(connection,"observe")),createElement("p","quiet","Organic, read-only results limited to Pins in the current session snapshot."));
+  if(!snapshot.length){card.append(createElement("p","","Read Pins first. Use Read observation before reading Top Pins."));return card}
+  if(result?.state==="NotRead"){card.append(createElement("p","","No Top Pins analytics has been read yet."));return card}
+  if(result?.stale)card.append(createElement("p","quiet","Top Pins is temporarily unavailable. The last valid result remains visible as stale data."));
+  if(result?.state==="Unavailable")card.append(createElement("p","","Top Pins analytics is unavailable for this Pinterest application."));
+  else if(result?.state==="RateLimited")card.append(createElement("p","","Pinterest rate-limited the Top Pins request. Retry later."));
+  else if(result?.state==="Failed")card.append(createElement("p","","Top Pins could not be read. The Pinterest content connection remains available."));
+  else if(result?.state==="ReauthorizationRequired"){card.append(createElement("p","","Reauthorize Pinterest before reading Top Pins."));return card}
+  if(result?.window)card.append(createElement("p","pin-performance-window",`${accountDay(result.window.startDate)} to ${accountDay(result.window.endDate)} · 30 completed UTC days`));
+  if(result?.state==="NoData")card.append(createElement("p","","No safely joinable Top Pins were available for this date window."));
+  const safeById=new Map(snapshot.slice(0,25).map(pin=>[pin.pinId,pin])),rows=[];
+  for(const metrics of result?.pins??[]){const pin=safeById.get(metrics.pinId);if(!pin)continue;const row=createElement("tr");row.append(createElement("td","",rows.length+1),createElement("td","",pin.title||"Untitled Pin"),createElement("td","",pin.boardName||"Unknown board"));for(const key of ["impressions","saves","pinClicks","outboundClicks"])row.append(createElement("td","",dailyMetricValue(metrics[key])));rows.push(row)}
+  if(rows.length){const table=createElement("table","top-pins-table"),head=createElement("thead"),header=createElement("tr"),body=createElement("tbody");for(const label of ["Rank","Pin","Board","Impressions","Saves","Pin clicks","Outbound clicks"]){const cell=createElement("th","",label);cell.setAttribute("scope","col");header.append(cell)}head.append(header);body.append(...rows);table.append(head,body);card.append(table)}
+  return card;
+}
+
 function performanceView() {
   const fragment=document.createDocumentFragment();
-  fragment.append(accountPerformanceView(),pinPerformanceView());
+  fragment.append(accountPerformanceView(),topPinsView(),pinPerformanceView());
   return fragment;
 }
 function createElement(tag, className = "", content = "") {
@@ -440,14 +461,21 @@ async function readObservation() {
 }
 
 async function readAccountPerformance(){
-  if(accountPerformanceInFlight||performanceInFlight||!hasPinterestContract(api())||!actionAllowed(connection,"observe"))return;
+  if(accountPerformanceInFlight||topPinsInFlight||performanceInFlight||!hasPinterestContract(api())||!actionAllowed(connection,"observe"))return;
   accountPerformanceInFlight=true;render();
   try{const result=await api().readAccountPerformance({correlationIdentifier:"pinterest-ui-account-organic-performance"});connection=transition(connection,{type:"ACCOUNT_PERFORMANCE_RESULT",value:result});}
   catch{connection=transition(connection,{type:"ACCOUNT_PERFORMANCE_RESULT",value:{state:"Failed"}})}
   finally{accountPerformanceInFlight=false;render()}
 }
+async function readTopPins(){
+  if(topPinsInFlight||accountPerformanceInFlight||performanceInFlight||!hasPinterestContract(api())||!(connection.observation?.pins?.length))return;
+  topPinsInFlight=true;render();
+  try{const result=await api().readTopPins({correlationIdentifier:"pinterest-ui-top-pins"});connection=transition(connection,{type:"TOP_PINS_RESULT",value:result});}
+  catch{connection=transition(connection,{type:"TOP_PINS_RESULT",value:{state:"Failed"}})}
+  finally{topPinsInFlight=false;render()}
+}
 async function readPerformance(){
-  if(performanceInFlight||accountPerformanceInFlight||!hasPinterestContract(api())||!(connection.observation?.pins?.length))return;
+  if(performanceInFlight||topPinsInFlight||accountPerformanceInFlight||!hasPinterestContract(api())||!(connection.observation?.pins?.length))return;
   performanceInFlight=true;render();
   try{const result=await api().readPerformance({correlationIdentifier:"pinterest-ui-organic-performance"});connection=transition(connection,{type:"PERFORMANCE_RESULT",value:result});}
   catch{connection=transition(connection,{type:"PERFORMANCE_RESULT",value:{state:"Failed"}})}
@@ -467,6 +495,7 @@ function bind() {
       if (control.dataset.pinAction === "verify") return verifyConnection();
       if (control.dataset.pinAction === "observe") return readObservation();
       if (control.dataset.pinAction === "account-performance") return readAccountPerformance();
+      if (control.dataset.pinAction === "top-pins") return readTopPins();
       if (control.dataset.pinAction === "performance") return readPerformance();
       return refreshStatus();
     };

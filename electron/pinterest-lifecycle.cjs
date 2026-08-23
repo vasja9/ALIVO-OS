@@ -64,6 +64,7 @@ function createPinterestLifecycle({
     verifyConnection: (input) => serialize(async () => (await currentComposition()).verifyConnection(input)),
     readObservation: (input) => serialize(async () => (await currentComposition()).readObservation(input)),
     readAccountPerformance: (input) => serialize(async () => (await currentComposition()).readAccountPerformance(input)),
+    readTopPins: (input) => serialize(async () => (await currentComposition()).readTopPins(input)),
     readPerformance: (input) => serialize(async () => (await currentComposition()).readPerformance(input)),
     reconfigure: (change) => serialize(async () => {
       if (typeof change !== "function") throw new TypeError("reconfiguration change is required");
