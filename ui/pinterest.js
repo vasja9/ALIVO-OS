@@ -212,6 +212,27 @@ function accountTrendRows(daily) {
   return daily.slice(0,30).flatMap(item=>typeof item?.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(item.date)&&accountDay(item.date)?[{date:item.date,impressions:accountTrendNumber(item.impressions),saves:accountTrendNumber(item.saves),pinClicks:accountTrendNumber(item.pinClicks),outboundClicks:accountTrendNumber(item.outboundClicks)}]:[]).sort((left,right)=>left.date.localeCompare(right.date));
 }
 
+const accountComparisonMetrics=Object.freeze([Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
+const comparisonInteger=value=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:null;
+const canonicalComparisonDate=value=>{if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const date=new Date(`${value}T00:00:00.000Z`);return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value};
+const comparisonSigned=value=>value===null?"—":value>0?`+${value}`:value<0?`−${Math.abs(value)}`:"0";
+const comparisonPercent=value=>value===null?"—":value>0?`+${value.toFixed(2)}%`:value<0?`−${Math.abs(value).toFixed(2)}%`:"0.00%";
+
+function accountComparisonDates(window){
+  if(window?.completedDays!==30||!canonicalComparisonDate(window.startDate)||!canonicalComparisonDate(window.endDate))return null;
+  const start=new Date(`${window.startDate}T00:00:00.000Z`),dates=[];for(let index=0;index<30;index++){dates.push(start.toISOString().slice(0,10));start.setUTCDate(start.getUTCDate()+1)}return dates.at(-1)===window.endDate?Object.freeze(dates):null;
+}
+
+function accountComparison(window,daily){
+  const dates=accountComparisonDates(window);if(!dates||!Array.isArray(daily))return null;const source=daily.slice(0,30),byDate=new Map();let invalidDates=false;for(const item of source){if(!canonicalComparisonDate(item?.date)||byDate.has(item.date)){invalidDates=true;continue}byDate.set(item.date,Object.freeze({date:item.date,impressions:comparisonInteger(item.impressions),saves:comparisonInteger(item.saves),pinClicks:comparisonInteger(item.pinClicks),outboundClicks:comparisonInteger(item.outboundClicks)}))}if(dates.some(date=>!byDate.has(date)))invalidDates=true;
+  const total=(period,key)=>{let value=0;for(const date of period){const dailyValue=byDate.get(date)?.[key];if(dailyValue===null||dailyValue===undefined)return null;value+=dailyValue;if(!Number.isSafeInteger(value))return null}return value},previousDates=dates.slice(0,15),latestDates=dates.slice(15),rows=accountComparisonMetrics.map(metric=>{if(invalidDates)return Object.freeze({...metric,previousTotal:null,latestTotal:null,absoluteChange:null,percentageChange:null});const previousTotal=total(previousDates,metric.key),latestTotal=total(latestDates,metric.key);if(previousTotal===null||latestTotal===null)return Object.freeze({...metric,previousTotal:null,latestTotal:null,absoluteChange:null,percentageChange:null});const absoluteChange=latestTotal-previousTotal;if(!Number.isSafeInteger(absoluteChange))return Object.freeze({...metric,previousTotal:null,latestTotal:null,absoluteChange:null,percentageChange:null});const percentageChange=previousTotal===0?(latestTotal===0?0:null):absoluteChange/previousTotal*100;return Object.freeze({...metric,previousTotal,latestTotal,absoluteChange,percentageChange:Number.isFinite(percentageChange)?percentageChange:null})});
+  return Object.freeze({previousLabel:`${accountDay(previousDates[0])} – ${accountDay(previousDates.at(-1))}`,latestLabel:`${accountDay(latestDates[0])} – ${accountDay(latestDates.at(-1))}`,rows:Object.freeze(rows)});
+}
+
+function accountComparisonView(window,daily){
+  const comparison=accountComparison(window,daily);if(!comparison)return null;const section=createElement("section","account-comparison"),ranges=createElement("p","account-comparison-ranges",`Previous: ${comparison.previousLabel} · Latest: ${comparison.latestLabel}`),wrapper=createElement("div","account-comparison-table-wrap"),table=createElement("table","account-comparison-table"),head=createElement("thead"),headingRow=createElement("tr"),body=createElement("tbody");for(const label of ["Metric","Previous 15 days","Latest 15 days","Absolute change","Percentage change"]){const cell=createElement("th","",label);cell.setAttribute("scope","col");headingRow.append(cell)}head.append(headingRow);for(const item of comparison.rows){const row=createElement("tr");row.append(createElement("th","",item.label),createElement("td","",item.previousTotal===null?"—":String(item.previousTotal)),createElement("td","",item.latestTotal===null?"—":String(item.latestTotal)),createElement("td","",comparisonSigned(item.absoluteChange)),createElement("td","",comparisonPercent(item.percentageChange)));row.children[0].setAttribute("scope","row");body.append(row)}table.append(head,body);wrapper.append(table);section.append(createElement("h3","","Observed 15-day comparison"),createElement("p","","Latest 15 completed UTC days compared with the previous 15 completed UTC days. Descriptive totals only; no prediction or causal attribution."),ranges,wrapper);return section;
+}
+
 function accountTrendSvg(rows, metric) {
   const values=rows.map((item,index)=>({index,date:item.date,value:item[metric.key]})),usable=values.filter(item=>item.value!==null);
   if(!usable.length)return null;
@@ -263,6 +284,7 @@ function accountPerformanceView() {
   if(performance?.window)card.append(createElement("p","pin-performance-window",`${performance.window.startDate} to ${performance.window.endDate} · 30 completed UTC days`));
   if(performance?.latestAvailableDate)card.append(createElement("p","quiet",`Latest available date: ${performance.latestAvailableDate}`));
   if(performance?.totals){const metrics=createElement("div","pin-kpis");for(const [label,key] of [["Impressions","impressions"],["Saves","saves"],["Pin clicks","pinClicks"],["Outbound clicks","outboundClicks"]]){const metric=createElement("div","pin-metric");metric.append(createElement("span","",label),createElement("strong","",metricValue(performance.totals[key])));metrics.append(metric)}card.append(metrics)}
+  if(performance?.window&&(performance.state==="Available"||performance.stale)){const comparison=accountComparisonView(performance.window,performance.daily??[]);if(comparison)card.append(comparison)}
   if(performance?.state==="NoData")card.append(createElement("p","","No organic account metrics were available for this date window."));
   if(performance?.daily?.length&&(performance.state==="Available"||performance.stale))card.append(accountTrendView(performance.daily));
   if(performance?.daily?.length)card.append(createElement("h3","","Daily organic metrics"),accountDailyTable(performance.daily));
