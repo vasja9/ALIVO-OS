@@ -18,6 +18,7 @@ import type { PinterestProductionProviderRegistration } from "./PinterestProduct
 import { PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES, fetchPinterestThumbnail, fetchPinterestThumbnails, safeThumbnailDto, selectPinterestThumbnail } from "./PinterestThumbnailSecurity.ts";
 import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./PinterestThumbnailSecurity.ts";
 import { auditPinterestContent, emptyPinterestContentAudit, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
+import { emptyPinterestAccountAnalytics, parsePinterestAccountAnalytics, PINTEREST_ACCOUNT_ORGANIC_METRICS, withPinterestAccountAnalyticsState } from "./PinterestAccountAnalytics.ts";
 import { emptyPinterestOrganicAnalytics, parsePinterestOrganicAnalytics, pinterestCompletedUtcWindow, PINTEREST_ORGANIC_METRICS, withPinterestOrganicAnalyticsState } from "./PinterestOrganicAnalytics.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
@@ -177,6 +178,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
   let pinSnapshot:readonly PinterestRendererSafePin[]=Object.freeze([]);
   let contentAudit=emptyPinterestContentAudit();
   let organicAnalytics=emptyPinterestOrganicAnalytics();
+  let accountAnalytics=emptyPinterestAccountAnalytics();
   const boardLookup=new Map<string,string>();
   const resolveBoardNames=async(ids:readonly string[],correlationIdentifier:string)=>{
     const unresolved=new Set(ids.filter(id=>!boardLookup.has(id)));if(!unresolved.size)return;
@@ -217,6 +219,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         requestedAt: clock(),
       });
       const result = await verifier.verify(requestObject);
+      if (["AuthenticationRequired", "CredentialCorrectionRequired", "ReauthorizationRequired", "MFARequired", "PermissionDenied", "NonRecoverableFailure"].includes(result.properties.authenticationState)) accountAnalytics=emptyPinterestAccountAnalytics();
       return {
         state: result.state,
         authenticationState: result.properties.authenticationState,
@@ -247,6 +250,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
       });
       const result = await observationWorkflow.run(observationRequest);
       if (!(result instanceof PinterestObservationWorkflowResult)) {
+        if (["AuthenticationRequired", "WaitingForCredentialCorrection", "WaitingForReauthorization"].includes(String(result))) accountAnalytics=emptyPinterestAccountAnalytics();
         contentAudit=withPinterestContentAuditState(contentAudit,"TemporarilyUnavailable");
         return { state: result, summary: undefined, warnings: [], failures: [], provenance: undefined, pins: pinSnapshot, audit: contentAudit };
       }
@@ -273,6 +277,21 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         audit: contentAudit,
       };
     },
+    async readAccountPerformance(input:Record<string, unknown> = {}) {
+      const context=common(input),window=pinterestCompletedUtcWindow(clock());
+      try {
+        const interrupted=new InterruptedOperationReference({tcoTaskReference:"ElectronUI",sourceAdapterReference:ADAPTER_ID,businessPackageId,correlationIdentifier:context.correlationIdentifier});
+        const authentication=await request.registration.authentication.authenticate(new ExternalAuthenticationRequest({id:new ExternalAuthenticationId(`electron-pinterest-account-analytics:${++sequence}`),credentialId,method:ExternalAuthenticationMethod.OAuth,businessPackageId,sourceAdapterReference:ADAPTER_ID,requestedCapability:"AnalyticsObservation",tcoTaskReference:"ElectronUI",sourceRequestReference:`electron-pinterest-account-analytics:${sequence}`,correlationIdentifier:context.correlationIdentifier,requestingAuthorityReference:"ElectronUI",requestedAt:clock(),interruptedOperation:interrupted}));
+        if(!authentication.successful)return accountAnalytics=emptyPinterestAccountAnalytics("ReauthorizationRequired");
+        const response=await request.registration.transport.execute({baseUrl:request.apiBaseUrl,environment:PinterestEnvironment.Production,path:"/v5/user_account/analytics",query:{start_date:window.startDate,end_date:window.endDate,from_claimed_content:"BOTH",pin_format:"ALL",app_types:"ALL",metric_types:PINTEREST_ACCOUNT_ORGANIC_METRICS.join(","),split_field:"NO_SPLIT",content_type:"ORGANIC"},timeoutMs:30_000,session:authentication.session});
+        if(response.status===401||response.status===403)return accountAnalytics=withPinterestAccountAnalyticsState(accountAnalytics,"Unavailable");
+        if(response.status===429)return accountAnalytics=withPinterestAccountAnalyticsState(accountAnalytics,"RateLimited");
+        if(response.status!==200)return accountAnalytics=withPinterestAccountAnalyticsState(accountAnalytics,"Failed");
+        return accountAnalytics=parsePinterestAccountAnalytics(response.body,window);
+      } catch {
+        return accountAnalytics=withPinterestAccountAnalyticsState(accountAnalytics,"Failed");
+      }
+    },
     async readPerformance(input:Record<string, unknown> = {}) {
       if (!pinSnapshot.length) return organicAnalytics=emptyPinterestOrganicAnalytics();
       const context=common(input),window=pinterestCompletedUtcWindow(clock()),pinIds=pinSnapshot.map(pin=>pin.pinId).slice(0,25);
@@ -289,6 +308,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"Failed");
       }
     },
+    clearAccountPerformance() { accountAnalytics=emptyPinterestAccountAnalytics(); },
     verificationRepository,
     observationWorkflow,
     integration,

@@ -49,6 +49,9 @@ class HarnessNode {
   click() {
     if (!this.disabled && typeof this.onclick === "function") return this.onclick({ currentTarget: this });
   }
+  pressKey(key) {
+    if (this.tagName === "BUTTON" && (key === "Enter" || key === " ")) return this.click();
+  }
   set textContent(value) {
     this._text = String(value ?? "");
     this.children = [];
@@ -200,7 +203,7 @@ export function createPinterestDomHarness(preload = {}) {
     calls.push({ name, type: "invoke", input });
     return original(input);
   };
-  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation", "readPerformance"]) {
+  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation", "readAccountPerformance", "readPerformance"]) {
     if (typeof preload[name] === "function") {
       const original = preload[name];
       preload[name] = input => invoke(name, input, original);

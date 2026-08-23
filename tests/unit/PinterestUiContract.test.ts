@@ -11,9 +11,9 @@ test("Pinterest UI uses only the new preload contract and rejects an incomplete 
   assert.equal(hasPinterestContract(undefined), false);
   assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {} }), false);
   assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {} }), false);
-  assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {}, readPerformance() {} }), true);
+  assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {}, readAccountPerformance() {}, readPerformance() {} }), true);
   assert.doesNotMatch(source, /window\.alivoPinterest\?\.read|window\.alivoPinterest\?\.detail|window\.alivoPinterest\?\.command/);
-  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation"]) assert.match(source, new RegExp(`\\.${name}\\(`));
+  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation", "readAccountPerformance", "readPerformance"]) assert.match(source, new RegExp(`\\.${name}\\(`));
 });
 
 test("Pinterest UI state transitions cover missing configuration, connection, verification, and observation", () => {

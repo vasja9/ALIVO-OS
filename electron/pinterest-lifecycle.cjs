@@ -54,6 +54,7 @@ function createPinterestLifecycle({
     startAuthorization: (input) => serialize(async () => (await currentRuntime()).startAuthorization(input)),
     status: (credentialId) => serialize(async () => {
       const result = await (await currentRuntime()).status(credentialId);
+      if (["AuthenticationRequired", "ReauthorizationRequired"].includes(result.state)) composition?.clearAccountPerformance?.();
       if (result.state === "Authenticated") requiresReauthorization = false;
       if (requiresReauthorization && result.state === "AuthenticationRequired") {
         return Object.freeze({ state: "ReauthorizationRequired", code: "SESSION_RECONFIGURED" });
@@ -62,6 +63,7 @@ function createPinterestLifecycle({
     }),
     verifyConnection: (input) => serialize(async () => (await currentComposition()).verifyConnection(input)),
     readObservation: (input) => serialize(async () => (await currentComposition()).readObservation(input)),
+    readAccountPerformance: (input) => serialize(async () => (await currentComposition()).readAccountPerformance(input)),
     readPerformance: (input) => serialize(async () => (await currentComposition()).readPerformance(input)),
     reconfigure: (change) => serialize(async () => {
       if (typeof change !== "function") throw new TypeError("reconfiguration change is required");

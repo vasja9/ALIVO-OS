@@ -14,9 +14,10 @@ function preloadFor({
   connectionStatus = async () => authenticationRequired,
   verifyConnection = async () => available,
   readObservation = async () => ({ ok: true, state: "Completed", summary: { acceptedObservations: 2 } }),
+  readAccountPerformance = async () => ({ ok: true, state: "NotRead", window: null, latestAvailableDate: null, totals: null, daily: [], stale: false }),
   readPerformance = async () => ({ ok: true, state: "NotRead", window: null, totals: null, pins: [] }),
 } = {}) {
-  return { startOAuth, connectionStatus, verifyConnection, readObservation, readPerformance };
+  return { startOAuth, connectionStatus, verifyConnection, readObservation, readAccountPerformance, readPerformance };
 }
 
 test("DOM harness normalizes Windows ESM line endings and rejects unhandled imports", () => {
@@ -330,6 +331,40 @@ test("temporary observation failure retains the last safe audit and duplicate re
   assert.equal(harness.hasText("last valid audit remains visible"),true);assert.equal(harness.hasText("Pins analyzed1"),true);assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
 });
 
+test("account performance is explicit, independent, bounded, stale-safe, and provider text stays inert",async()=>{
+  const metric=(index,offset)=>index<5?[0,20,100,100,null][(index+offset)%5]:index;
+  const daily=Array.from({length:31},(_,index)=>({date:new Date(Date.UTC(2026,6,24+index)).toISOString().slice(0,10),impressions:metric(index,0),saves:metric(index,1),pinClicks:metric(index,2),outboundClicks:metric(index,3),providerPayload:"daily-secret"}));
+  daily[30]={...daily[30],impressions:999,saves:999,pinClicks:999,outboundClicks:999};
+  const originalDaily=JSON.stringify(daily);
+  const availableAccount={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},latestAvailableDate:"2026-08-21",totals:{impressions:0,saves:2,pinClicks:null,outboundClicks:1},daily,stale:false,rawProvider:"account-secret"};
+  const retained={...availableAccount,state:"Failed",stale:true};
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readAccountPerformance:sequence(availableAccount,retained),readPerformance:async()=>({ok:true,state:"Failed",window:null,totals:null,pins:[]})})).start();
+  assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.callCount("readPerformance"),0);
+  await harness.clickAction("refresh");await harness.clickAction("verify");await harness.clickAction("observe");
+  assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.callCount("readPerformance"),0);
+  harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
+  assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.hasText("Organic account metrics · Read-only"),true);
+  await harness.clickAction("account-performance");
+  assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
+  assert.equal(harness.hasText("2026-07-24 to 2026-08-22 · 30 completed UTC days"),true);assert.equal(harness.hasText("Latest available date: 2026-08-21"),true);
+  assert.equal(harness.hasText("Impressions0Saves2Pin clicksUnavailableOutbound clicks1"),true);
+  const table=harness.document.querySelector(".account-performance-table"),tableRows=()=>table.children[1].children,headerCells=()=>table.children[0].children[0].children,sortButton=key=>harness.document.querySelector(`[data-account-sort="${key}"]`),rowDates=()=>tableRows().map(row=>row.children[0].textContent),columnValues=index=>tableRows().map(row=>row.children[index].textContent);
+  const expectedHeadings=["Date","Impressions","Saves","Pin clicks","Outbound clicks"],accountDailyColumnsForTest=["date","impressions","saves","pinClicks","outboundClicks"],buttons=headerCells().map(cell=>cell.children[0]);
+  const assertActive=(key,direction,indicator)=>{for(const cell of headerCells()){const button=cell.children[0],active=button.dataset.accountSort===key;assert.equal(cell.getAttribute("aria-sort"),active?direction:undefined);assert.equal(button.textContent,expectedHeadings[accountDailyColumnsForTest.indexOf(button.dataset.accountSort)]+(active?indicator:""))}};
+  assert.equal(table.tagName,"TABLE");assert.deepEqual(headerCells().map(cell=>cell.textContent),expectedHeadings);assert.equal(headerCells().every(cell=>cell.tagName==="TH"&&cell.getAttribute("scope")==="col"&&cell.getAttribute("aria-sort")===undefined),true);assert.equal(buttons.every(button=>button.tagName==="BUTTON"&&button.type==="button"),true);
+  assert.equal(tableRows().length,30);assert.deepEqual(tableRows()[0].children.map(cell=>cell.textContent),["24.07.26","0","20","100","100"]);assert.deepEqual([rowDates()[0],rowDates().at(-1)],["24.07.26","22.08.26"]);
+  sortButton("date").pressKey("Enter");assert.deepEqual([rowDates()[0],rowDates().at(-1)],["22.08.26","24.07.26"]);assertActive("date","descending","\u25bc");
+  sortButton("date").pressKey(" ");assert.deepEqual([rowDates()[0],rowDates().at(-1)],["24.07.26","22.08.26"]);assertActive("date","ascending","\u25b2");
+  for(const [key,index] of [["impressions",1],["saves",2],["pinClicks",3],["outboundClicks",4]]){const equalOrder=()=>tableRows().filter(row=>row.children[index].textContent==="100").map(row=>row.children[0].textContent),before=equalOrder();sortButton(key).click();let values=columnValues(index);assert.equal(values.indexOf("100")<values.indexOf("20"),true);assert.equal(values.includes("0"),true);assert.equal(values.at(-1),"\u2014");assert.deepEqual(equalOrder(),before);assertActive(key,"descending","\u25bc");const descendingEqual=equalOrder();sortButton(key).click();values=columnValues(index);assert.equal(values.indexOf("20")<values.indexOf("100"),true);assert.equal(values.includes("0"),true);assert.equal(values.at(-1),"\u2014");assert.deepEqual(equalOrder(),descendingEqual);assertActive(key,"ascending","\u25b2")}
+  assert.equal(JSON.stringify(daily),originalDaily);assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
+  const rows=tableRows(),tableTags=[];const visit=node=>{tableTags.push(node.tagName);for(const child of node.children)visit(child)};visit(table);assert.deepEqual([...new Set(tableTags)].sort(),["BUTTON","SPAN","TABLE","TBODY","TD","TH","THEAD","TR"].sort());for(const forbidden of ["daily-secret","account-secret","2026-08-23"])assert.equal(harness.hasText(forbidden),false);assert.equal(rows.some(row=>row.children.some(cell=>cell.textContent==="999")),false);
+  harness.document.querySelector('[data-pin-view="all"]').click();harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
+  assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
+  await harness.clickAction("account-performance");
+  assert.equal(harness.callCount("readAccountPerformance"),2);assert.equal(harness.callCount("readPerformance"),0);assert.equal(harness.hasText("last valid account analytics snapshot remains visible as stale data"),true);
+  assert.equal(harness.document.querySelectorAll("a").length,0);
+});
+
 test("organic performance is explicit, snapshot-bound, null-safe, and provider text stays inert",async()=>{
   const pin={pinId:"pin-1",title:'<img src=x onerror="steal()">',boardName:"Board",thumbnail:null};
   const availablePerformance={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},totals:{impressions:0,saves:2,pinClicks:null,outboundClicks:1},pins:[{pinId:"pin-1",impressions:0,saves:2,pinClicks:null,outboundClicks:1,providerPayload:"must-not-render"},{pinId:"unknown",impressions:999,saves:999,pinClicks:999,outboundClicks:999}],rawProvider:"secret"};
@@ -342,7 +377,7 @@ test("organic performance is explicit, snapshot-bound, null-safe, and provider t
   await harness.clickAction("observe");assert.equal(harness.callCount("readPerformance"),0);
   harness.document.querySelector('[data-pin-view="all"]').click();harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();assert.equal(harness.callCount("readPerformance"),0);
   await harness.clickAction("performance");assert.equal(harness.callCount("readPerformance"),1);
-  assert.equal(harness.hasText("Organic Pinterest metrics · Read-only"),true);assert.equal(harness.hasText("2026-07-24 to 2026-08-22 · 30 completed UTC days"),true);
+  assert.equal(harness.hasText("Per-Pin metrics · Beta · Read-only"),true);assert.equal(harness.hasText("2026-07-24 to 2026-08-22 · 30 completed UTC days"),true);
   assert.equal(harness.hasText("Impressions0Saves2Pin clicksUnavailableOutbound clicks1"),true);assert.equal(harness.hasText("must-not-render"),false);assert.equal(harness.hasText("secret"),false);assert.equal(harness.hasText("999"),false);
   await harness.clickAction("performance");assert.equal(harness.callCount("readPerformance"),2);assert.equal(harness.hasText("last valid analytics snapshot remains visible"),true);
   assert.equal(harness.document.querySelectorAll("a").length,0);

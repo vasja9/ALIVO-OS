@@ -60,6 +60,13 @@ function createPinterestIpcController({
         return { ok: false, state: "Unavailable", message: "Pinterest observation is unavailable" };
       }
     },
+    async readAccountPerformance(request) {
+      try {
+        return { ok: true, ...(await getLifecycle().readAccountPerformance(context.resolve(request))) };
+      } catch {
+        return { ok: false, state: "Failed" };
+      }
+    },
     async readPerformance(request) {
       try {
         return { ok: true, ...(await getLifecycle().readPerformance(context.resolve(request))) };
