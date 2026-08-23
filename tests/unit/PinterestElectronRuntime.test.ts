@@ -417,6 +417,35 @@ test("an API 401 immediately invalidates the stored credential and requires reau
   await runtime.close();
 });
 
+test("Pin analytics 401 and 403 are capability-local and never invalidate the authenticated session", async () => {
+  for (const status of [401, 403]) {
+    const store = new InMemoryPinterestSessionStore({
+      "credential:pinterest:alivo": { accessToken: "access-secret", expiresAt: "2026-09-19T12:00:00.000Z", businessPackageId: "ALIVO" },
+    });
+    let pinReads = 0;
+    const runtime = createPinterestRuntime({
+      configuration: CONFIGURATION,
+      sessionStore: store,
+      fetchImpl: async input => {
+        const url = new URL(String(input));
+        if (url.pathname === "/v5/pins/analytics") return response(status, { message: "capability unavailable" });
+        pinReads += 1;
+        return response(200, { items: [] });
+      },
+      now: () => NOW,
+    });
+    const request = { credentialId: "credential:pinterest:alivo", businessPackageId: "ALIVO" };
+    const auth = await runtime.authentication.authenticate(request);
+    const analytics = await runtime.transport.execute({ baseUrl: CONFIGURATION.apiBaseUrl, path: "/v5/pins/analytics", session: auth.session });
+    assert.equal(analytics.status, status);
+    assert.equal((await runtime.status(request.credentialId)).state, "Authenticated");
+    assert.equal(Object.keys(await store.load()).length, 1);
+    assert.equal((await runtime.readObservation({ ...request, capability: "OwnPins" })).state, "Read");
+    assert.equal(pinReads, 1);
+    await runtime.close();
+  }
+});
+
 test("production endpoint allowlist rejects credential exfiltration targets", async () => {
   const runtime = createPinterestRuntime({
     configuration: { ...CONFIGURATION, apiBaseUrl: "https://evil.test", authorizationUrl: "https://evil.test/oauth/" },
@@ -595,6 +624,10 @@ test("main-owned Pinterest context rejects renderer attempts to rebind package, 
 
 test("live composition routes verification and observation through the governed adapter and workflow", async () => {
   let boardRequests=0;
+  let analyticsRequests=0;
+  let analyticsQuery:Record<string,string>|undefined;
+  let analyticsStatus=200;
+  let analyticsThrows=false;
   let thumbnailRequests=0;
   const thumbnailSources:string[]=[];
   const boardQueries:Record<string,string>[]=[];
@@ -604,7 +637,7 @@ test("live composition routes verification and observation through the governed 
   const runtime = createPinterestRuntime({
     configuration: CONFIGURATION,
     sessionStore: store,
-    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: {media_type:"image",images:{"400x300":index===1?{url:"https://i.pinimg.com/400x300/rejected.png",width:0,height:300}:{url:`https://i.pinimg.com/400x300/pin-${index}.${index===2?"webp":"jpg"}`,width:400,height:300},"150x150":{url:`https://i.pinimg.com/150x150/pin-${index}.png`,width:150,height:150}},arbitrary:"provider-object"} })) });},
+    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}if(url.pathname==="/v5/pins/analytics"){analyticsRequests++;analyticsQuery=Object.fromEntries(url.searchParams);if(analyticsThrows)throw new Error("synthetic network detail");return response(analyticsStatus,Object.fromEntries(Array.from({length:25},(_,index)=>[`pin-${String(index).padStart(2,"0")}`,{summary_metrics:{IMPRESSION:index,SAVE:0,PIN_CLICK:index===0?undefined:1,OUTBOUND_CLICK:2},provider_url:"must-not-cross"}])))}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: {media_type:"image",images:{"400x300":index===1?{url:"https://i.pinimg.com/400x300/rejected.png",width:0,height:300}:{url:`https://i.pinimg.com/400x300/pin-${index}.${index===2?"webp":"jpg"}`,width:400,height:300},"150x150":{url:`https://i.pinimg.com/150x150/pin-${index}.png`,width:150,height:150}},arbitrary:"provider-object"} })) });},
     now: () => NOW,
   });
   const composition = createPinterestElectronComposition({
@@ -636,8 +669,24 @@ test("live composition routes verification and observation through the governed 
   assert.equal(/score|base64|media|board-1|access-secret|provider-object|pinimg/i.test(JSON.stringify(observation.audit)),false);
   const rendererObservation=safeObservation(observation);assert.equal(rendererObservation.pins[0].thumbnail.base64,COMPLETE_JPEG_BASE64);assert.equal(rendererObservation.pins[0].thumbnail.base64.length,976);
   assert.equal(/i\.pinimg\.com|provider-object|media|thumbnailUrl/i.test(JSON.stringify(rendererObservation)),false);
+  assert.equal(analyticsRequests,0);
+  const performance=await composition.readPerformance({correlationIdentifier:"composition-performance"});
+  assert.equal(analyticsRequests,1);assert.equal(performance.state,"Available");assert.equal(performance.pins.length,25);assert.equal(performance.pins[0].impressions,0);assert.equal(performance.pins[0].pinClicks,null);
+  assert.deepEqual(analyticsQuery,{pin_ids:Array.from({length:25},(_,index)=>`pin-${String(index).padStart(2,"0")}`).join(","),start_date:"2026-07-20",end_date:"2026-08-18",metric_types:"IMPRESSION,SAVE,PIN_CLICK,OUTBOUND_CLICK"});
+  assert.equal(/provider|url|base64|title|board|oauth|token|media/i.test(JSON.stringify(performance)),false);
   const duplicateObservation=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-repeat" });
   assert.deepEqual(duplicateObservation.pins,observation.pins);assert.deepEqual(duplicateObservation.audit,observation.audit);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);assert.equal(thumbnailRequests,25);
+  analyticsStatus=500;const failed=await composition.readPerformance();assert.equal(failed.state,"Failed");assert.equal(failed.pins.length,25);
+  analyticsStatus=200;analyticsThrows=true;const networkFailed=await composition.readPerformance();assert.equal(networkFailed.state,"Failed");assert.equal(networkFailed.pins.length,25);analyticsThrows=false;
+  analyticsStatus=403;const unavailable=await composition.readPerformance();assert.equal(unavailable.state,"Unavailable");assert.equal(unavailable.pins.length,25);
+  analyticsStatus=429;const limited=await composition.readPerformance();assert.equal(limited.state,"RateLimited");assert.equal(limited.pins.length,25);
+  analyticsStatus=401;const isolatedUnauthorized=await composition.readPerformance();assert.equal(isolatedUnauthorized.state,"Unavailable");assert.equal(isolatedUnauthorized.pins.length,25);assert.equal((await runtime.status("credential:pinterest:alivo")).state,"Authenticated");
+  const afterAnalyticsUnauthorized=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-after-analytics-401" });
+  assert.equal(["Completed","CompletedWithWarnings"].includes(afterAnalyticsUnauthorized.state),true);assert.equal(afterAnalyticsUnauthorized.pins.length,25);
+  const analyticsRequestsBeforeUnauthenticatedRead=analyticsRequests;
+  await runtime.authentication.reportProviderFailure({credentialId:"credential:pinterest:alivo"},"ReauthorizationRequired");
+  const unauthenticatedPerformance=await composition.readPerformance();
+  assert.deepEqual(unauthenticatedPerformance,{state:"ReauthorizationRequired",window:null,totals:null,pins:[]});assert.equal(analyticsRequests,analyticsRequestsBeforeUnauthenticatedRead);
   assert.equal(composition.integration.registry.all()[0].adapterId.value, "PinterestMarketSourceAdapter");
   assert.equal(composition.verificationRepository.current({ value: "ALIVO" } as never)?.state, "Available");
   await runtime.close();

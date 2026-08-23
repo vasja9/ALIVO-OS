@@ -10,7 +10,8 @@ const stateSource = readFileSync(new URL("../../ui/pinterest-connection-state.js
 test("Pinterest UI uses only the new preload contract and rejects an incomplete preload", () => {
   assert.equal(hasPinterestContract(undefined), false);
   assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {} }), false);
-  assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {} }), true);
+  assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {} }), false);
+  assert.equal(hasPinterestContract({ startOAuth() {}, connectionStatus() {}, verifyConnection() {}, readObservation() {}, readPerformance() {} }), true);
   assert.doesNotMatch(source, /window\.alivoPinterest\?\.read|window\.alivoPinterest\?\.detail|window\.alivoPinterest\?\.command/);
   for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation"]) assert.match(source, new RegExp(`\\.${name}\\(`));
 });

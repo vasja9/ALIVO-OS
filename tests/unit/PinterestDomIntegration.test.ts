@@ -14,8 +14,9 @@ function preloadFor({
   connectionStatus = async () => authenticationRequired,
   verifyConnection = async () => available,
   readObservation = async () => ({ ok: true, state: "Completed", summary: { acceptedObservations: 2 } }),
+  readPerformance = async () => ({ ok: true, state: "NotRead", window: null, totals: null, pins: [] }),
 } = {}) {
-  return { startOAuth, connectionStatus, verifyConnection, readObservation };
+  return { startOAuth, connectionStatus, verifyConnection, readObservation, readPerformance };
 }
 
 test("DOM harness normalizes Windows ESM line endings and rejects unhandled imports", () => {
@@ -327,4 +328,33 @@ test("temporary observation failure retains the last safe audit and duplicate re
   assert.equal(harness.hasText("Pins analyzed1"),true);assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
   await harness.clickAction("observe");await harness.settle();
   assert.equal(harness.hasText("last valid audit remains visible"),true);assert.equal(harness.hasText("Pins analyzed1"),true);assert.equal(harness.document.querySelector("#pin-attention-count").textContent,"1");
+});
+
+test("organic performance is explicit, snapshot-bound, null-safe, and provider text stays inert",async()=>{
+  const pin={pinId:"pin-1",title:'<img src=x onerror="steal()">',boardName:"Board",thumbnail:null};
+  const availablePerformance={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},totals:{impressions:0,saves:2,pinClicks:null,outboundClicks:1},pins:[{pinId:"pin-1",impressions:0,saves:2,pinClicks:null,outboundClicks:1,providerPayload:"must-not-render"},{pinId:"unknown",impressions:999,saves:999,pinClicks:999,outboundClicks:999}],rawProvider:"secret"};
+  const retained={...availablePerformance,state:"Failed"};
+  const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:async()=>({ok:true,state:"Completed",pins:[pin]}),readPerformance:sequence(availablePerformance,retained)})).start();
+  assert.equal(harness.callCount("readPerformance"),0);
+  harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
+  assert.equal(harness.callCount("readPerformance"),0);assert.equal(harness.hasText("Read Pins first"),true);
+  await harness.clickAction("refresh");await harness.clickAction("verify");assert.equal(harness.callCount("readPerformance"),0);
+  await harness.clickAction("observe");assert.equal(harness.callCount("readPerformance"),0);
+  harness.document.querySelector('[data-pin-view="all"]').click();harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();assert.equal(harness.callCount("readPerformance"),0);
+  await harness.clickAction("performance");assert.equal(harness.callCount("readPerformance"),1);
+  assert.equal(harness.hasText("Organic Pinterest metrics · Read-only"),true);assert.equal(harness.hasText("2026-07-24 to 2026-08-22 · 30 completed UTC days"),true);
+  assert.equal(harness.hasText("Impressions0Saves2Pin clicksUnavailableOutbound clicks1"),true);assert.equal(harness.hasText("must-not-render"),false);assert.equal(harness.hasText("secret"),false);assert.equal(harness.hasText("999"),false);
+  await harness.clickAction("performance");assert.equal(harness.callCount("readPerformance"),2);assert.equal(harness.hasText("last valid analytics snapshot remains visible"),true);
+  assert.equal(harness.document.querySelectorAll("a").length,0);
+});
+
+test("analytics authorization denial is shown as capability unavailable without reconnect language",async()=>{
+  for(const status of ["Unavailable401","Unavailable403"]){
+    const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readObservation:async()=>({ok:true,state:"Completed",pins:[{pinId:"pin-1",title:"Pin",boardName:"Board",thumbnail:null}]}),readPerformance:async()=>({ok:true,state:"Unavailable",window:null,totals:null,pins:[],status})})).start();
+    await harness.clickAction("observe");
+    harness.document.querySelector('[data-pin-view="performance"]').click();
+    await harness.clickAction("performance");
+    assert.equal(harness.hasText("Organic Pin analytics is unavailable for this Pinterest application."),true);
+    for(const forbidden of ["Reauthorize Pinterest","Pinterest disconnected","Connect Pinterest again"])assert.equal(harness.hasText(forbidden),false);
+  }
 });

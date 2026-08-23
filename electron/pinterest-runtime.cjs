@@ -12,7 +12,7 @@ const DEFAULT_API_BASE_URL = "https://api.pinterest.com";
 const DEFAULT_AUTHORIZATION_ORIGIN = "https://www.pinterest.com";
 const DEFAULT_SCOPES = Object.freeze(["boards:read", "pins:read", "user_accounts:read"]);
 const READ_CAPABILITIES = new Set(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"]);
-const SAFE_QUERY_KEYS = new Set(["ad_account_id", "bookmark", "end_date", "metric_types", "page_size", "pin_id", "start_date"]);
+const SAFE_QUERY_KEYS = new Set(["bookmark", "end_date", "metric_types", "page_size", "pin_id", "pin_ids", "start_date"]);
 const CALLBACK_TTL_MS = 10 * 60 * 1000;
 const TOKEN_EXCHANGE_TIMEOUT_MS = 30 * 1000;
 const EXPIRY_SKEW_MS = 60 * 1000;
@@ -408,7 +408,9 @@ function createPinterestRuntime(options = {}) {
         signal: controller.signal,
       });
       const body = await jsonOrUndefined(response);
-      if (response.status === 401) await reportProviderFailure({ credentialId: session.credentialId }, "ReauthorizationRequired");
+      // Pin analytics is an optional beta capability. Its 401 can mean that the
+      // application cannot use analytics while the same token can still read Pins.
+      if (response.status === 401 && url.pathname !== "/v5/pins/analytics") await reportProviderFailure({ credentialId: session.credentialId }, "ReauthorizationRequired");
       return { status: response.status, body, headers: headerSubset(response.headers), provenance: { endpoint: url.pathname, operation: "read-only" } };
     } catch (error) {
       if (error?.name === "AbortError") throw new PinterestRuntimeError("TIMEOUT", "Pinterest request timed out");

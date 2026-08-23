@@ -109,6 +109,14 @@ ipcMain.handle("pinterest:observation:read", async (_event, request) => {
     return { ok: false, state: "Unavailable", message: "Pinterest observation is unavailable" };
   }
 });
+ipcMain.handle("pinterest:performance:read", async (_event, request) => {
+  try {
+    assertTrustedPinterestSender(_event, mainWindow, trustedUiPaths);
+    return await getPinterestIpcController().readPerformance(request);
+  } catch {
+    return { ok: false, state: "Failed" };
+  }
+});
 ipcMain.handle("pinterest:local-config:status", async (_event) => {
   try {
     assertTrustedPinterestSender(_event, mainWindow, trustedUiPaths);

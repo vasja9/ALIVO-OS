@@ -32,6 +32,7 @@ let statusPoll;
 let oauthInFlight = false;
 let verifyInFlight = false;
 let observationInFlight = false;
+let performanceInFlight = false;
 let pollAttempts = 0;
 
 const api = () => globalThis.window?.alivoPinterest;
@@ -44,6 +45,7 @@ const displayDate = value => {
 };
 const busy = () => connection.uiState === PINTEREST_UI_STATE.Connecting || connection.uiState === PINTEREST_UI_STATE.Verifying;
 const statusLabel = () => labels[connection.uiState] || ["Pinterest status unavailable", "Pinterest state is unavailable."];
+const metricValue = value => value === null || value === undefined ? "Unavailable" : String(value);
 
 function observationSummary() {
   const observation = connection.observation;
@@ -185,6 +187,29 @@ function attentionView() {
   return fragment;
 }
 
+function performanceView() {
+  const fragment=document.createDocumentFragment(),pins=connection.observation?.pins??[],performance=connection.performance;
+  const summary=createElement("article","card pinterest-organic-performance");
+  summary.append(createElement("p","eyebrow","Organic Pinterest metrics · Read-only"),createElement("h2","","Pin performance"));
+  const action=actionButton(performanceInFlight?"Reading performance":"Read performance","performance",pins.length>0&&!performanceInFlight&&actionAllowed(connection,"observe"));
+  summary.append(action);
+  if(!pins.length){summary.append(createElement("p","","Read Pins first. Use Read observation before reading performance."));fragment.append(summary);return fragment;}
+  if(performance?.state==="NotRead"){summary.append(createElement("p","","No organic Pin performance has been read yet."));fragment.append(summary);return fragment;}
+  if(["Unavailable","RateLimited","Failed"].includes(performance?.state)&&performance?.pins?.length)summary.append(createElement("p","quiet","Performance is temporarily unavailable. The last valid analytics snapshot remains visible."));
+  if(performance?.state==="Unavailable")summary.append(createElement("p","","Organic Pin analytics is unavailable for this Pinterest application."));
+  else if(performance?.state==="RateLimited")summary.append(createElement("p","","Pinterest rate-limited the performance request. Retry later."));
+  else if(performance?.state==="Failed")summary.append(createElement("p","","Performance could not be read. The Pinterest content connection remains available."));
+  else if(performance?.state==="ReauthorizationRequired"){summary.append(createElement("p","","Reauthorize Pinterest before reading performance."));fragment.append(summary);return fragment;}
+  if(performance?.window)summary.append(createElement("p","pin-performance-window",`${performance.window.startDate} to ${performance.window.endDate} · 30 completed UTC days`));
+  if(performance?.totals){const metrics=createElement("div","pin-kpis");for(const [label,key] of [["Impressions","impressions"],["Saves","saves"],["Pin clicks","pinClicks"],["Outbound clicks","outboundClicks"]]){const metric=createElement("div","pin-metric");metric.append(createElement("span","",label),createElement("strong","",metricValue(performance.totals[key])));metrics.append(metric)}summary.append(metrics)}
+  if(performance?.state==="NoData")summary.append(createElement("p","","No organic Pin metrics were available for this date window."));
+  fragment.append(summary);
+  const byId=new Map((performance?.pins??[]).map(pin=>[pin.pinId,pin])),list=createElement("div","pin-list");
+  for(const pin of pins){const metrics=byId.get(pin.pinId);if(!metrics)continue;const card=pinCard(pin),values=createElement("div","pin-kpis");for(const [label,key] of [["Impressions","impressions"],["Saves","saves"],["Pin clicks","pinClicks"],["Outbound clicks","outboundClicks"]]){const item=createElement("div","pin-metric");item.append(createElement("span","",label),createElement("strong","",metricValue(metrics[key])));values.append(item)}card.children[1]?.append(values);list.append(card)}
+  if(list.childElementCount)fragment.append(list);
+  return fragment;
+}
+
 function createElement(tag, className = "", content = "") {
   const element = document.createElement(tag);
   if (className) element.className = className;
@@ -233,6 +258,10 @@ function scopedView() {
   }
   if (view === "attention") {
     fragment.append(attentionView());
+    return fragment;
+  }
+  if (view === "performance") {
+    fragment.append(performanceView());
     return fragment;
   }
   const card = createElement("article", "card empty");
@@ -331,6 +360,14 @@ async function readObservation() {
   }
 }
 
+async function readPerformance(){
+  if(performanceInFlight||!hasPinterestContract(api())||!(connection.observation?.pins?.length))return;
+  performanceInFlight=true;render();
+  try{const result=await api().readPerformance({correlationIdentifier:"pinterest-ui-organic-performance"});connection=transition(connection,{type:"PERFORMANCE_RESULT",value:result});}
+  catch{connection=transition(connection,{type:"PERFORMANCE_RESULT",value:{state:"Failed"}})}
+  finally{performanceInFlight=false;render()}
+}
+
 function changeView(next) {
   view = views.has(next) ? next : "overview";
   render();
@@ -343,6 +380,7 @@ function bind() {
       if (control.dataset.pinAction === "connect") return connect();
       if (control.dataset.pinAction === "verify") return verifyConnection();
       if (control.dataset.pinAction === "observe") return readObservation();
+      if (control.dataset.pinAction === "performance") return readPerformance();
       return refreshStatus();
     };
   });

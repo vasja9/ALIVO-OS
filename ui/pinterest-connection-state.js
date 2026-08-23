@@ -88,7 +88,7 @@ const safeMessage = value => {
 };
 
 export function hasPinterestContract(api) {
-  return !!api && ["startOAuth", "connectionStatus", "verifyConnection", "readObservation"].every(name => typeof api[name] === "function");
+  return !!api && ["startOAuth", "connectionStatus", "verifyConnection", "readObservation", "readPerformance"].every(name => typeof api[name] === "function");
 }
 
 export function createPinterestUiState(contractAvailable = true) {
@@ -98,6 +98,7 @@ export function createPinterestUiState(contractAvailable = true) {
     verifiedConnectionState: undefined,
     observation: undefined,
     observationStatus: "unread",
+    performance: safePerformance(),
     message: contractAvailable ? "Pinterest is not connected" : "Pinterest preload contract is unavailable",
   });
 }
@@ -160,7 +161,8 @@ export function transition(current, event) {
   }
   if (event.type === "STATUS_RESULT") {
     const next = resultState(event.value, state.pendingOAuth, event.oauthTimedOut);
-    return Object.freeze({ ...state, uiState: next, pendingOAuth: next === PINTEREST_UI_STATE.Connecting && state.pendingOAuth, message: safeMessage(event.value) || state.message });
+    const performance = [PINTEREST_UI_STATE.ReauthorizationRequired, PINTEREST_UI_STATE.Disconnected, PINTEREST_UI_STATE.ConfigurationMissing].includes(next) ? safePerformance() : state.performance;
+    return Object.freeze({ ...state, uiState: next, performance, pendingOAuth: next === PINTEREST_UI_STATE.Connecting && state.pendingOAuth, message: safeMessage(event.value) || state.message });
   }
   if (event.type === "VERIFY_REQUEST") return Object.freeze({ ...state, uiState: PINTEREST_UI_STATE.Verifying, message: "Checking the Pinterest read-only connection" });
   if (event.type === "VERIFY_RESULT") {
@@ -181,8 +183,11 @@ export function transition(current, event) {
       : safe.audit;
     const retainedPins = observationStatus === "unavailable" && !safe.pins.length && Array.isArray(state.observation?.pins) ? state.observation.pins : safe.pins;
     const observation = Object.freeze({ ...safe, pins: retainedPins, audit: retainedAudit });
-    return Object.freeze({ ...state, uiState: next, pendingOAuth: false, observation, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
+    const priorIds=(state.observation?.pins??[]).map(pin=>pin.pinId).join("\u0000"),nextIds=retainedPins.map(pin=>pin.pinId).join("\u0000");
+    const performance=priorIds&&priorIds===nextIds?state.performance:safePerformance();
+    return Object.freeze({ ...state, uiState: next, performance, pendingOAuth: false, observation, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
   }
+  if (event.type === "PERFORMANCE_RESULT") return Object.freeze({ ...state, performance: safePerformance(event.value, state.observation?.pins ?? []) });
   return state;
 }
 
@@ -221,6 +226,20 @@ export function safeObservation(value) {
     provenance: value.provenance,
   });
   return Object.freeze({ ...envelope, pins: Object.freeze(pins), audit: safeContentAudit(value.audit, pins) });
+}
+
+function safePerformance(value, pins = []) {
+  const empty=()=>Object.freeze({state:"NotRead",window:null,totals:null,pins:Object.freeze([])});
+  if(!value||typeof value!=="object")return empty();
+  const states=new Set(["NotRead","Available","NoData","Unavailable","RateLimited","ReauthorizationRequired","Failed"]),state=states.has(value.state)?value.state:"Failed";
+  if(state==="ReauthorizationRequired")return Object.freeze({...empty(),state});
+  const allowed=new Set(pins.slice(0,25).map(pin=>pin.pinId)),seen=new Set();
+  const number=value=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:null;
+  const safePins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{const pinId=typeof pin?.pinId==="string"?pin.pinId.trim().slice(0,128):"";if(!pinId||!allowed.has(pinId)||seen.has(pinId))return[];seen.add(pinId);return[Object.freeze({pinId,impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks)})]}):[];
+  const date=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null;
+  const startDate=date(value.window?.startDate),endDate=date(value.window?.endDate),window=startDate&&endDate&&value.window?.completedDays===30?Object.freeze({startDate,endDate,completedDays:30}):null;
+  const totals=value.totals&&typeof value.totals==="object"?Object.freeze({impressions:number(value.totals.impressions),saves:number(value.totals.saves),pinClicks:number(value.totals.pinClicks),outboundClicks:number(value.totals.outboundClicks)}):null;
+  return Object.freeze({state,window,totals,pins:Object.freeze(safePins)});
 }
 
 function safeContentAudit(value, pins) {

@@ -18,6 +18,7 @@ import type { PinterestProductionProviderRegistration } from "./PinterestProduct
 import { PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES, fetchPinterestThumbnail, fetchPinterestThumbnails, safeThumbnailDto, selectPinterestThumbnail } from "./PinterestThumbnailSecurity.ts";
 import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./PinterestThumbnailSecurity.ts";
 import { auditPinterestContent, emptyPinterestContentAudit, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
+import { emptyPinterestOrganicAnalytics, parsePinterestOrganicAnalytics, pinterestCompletedUtcWindow, PINTEREST_ORGANIC_METRICS, withPinterestOrganicAnalyticsState } from "./PinterestOrganicAnalytics.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
 const APPROVED_CAPABILITIES = Object.freeze(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"].map((value) => new MarketSourceCapability(value)));
@@ -175,6 +176,7 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
   let sequence = 0;
   let pinSnapshot:readonly PinterestRendererSafePin[]=Object.freeze([]);
   let contentAudit=emptyPinterestContentAudit();
+  let organicAnalytics=emptyPinterestOrganicAnalytics();
   const boardLookup=new Map<string,string>();
   const resolveBoardNames=async(ids:readonly string[],correlationIdentifier:string)=>{
     const unresolved=new Set(ids.filter(id=>!boardLookup.has(id)));if(!unresolved.size)return;
@@ -251,12 +253,15 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
       const ids=boardIds(result.acceptedObservations);if(ids.length)await resolveBoardNames(ids,context.correlationIdentifier);
       const normalizedPins=rendererSafePins(result.acceptedObservations,boardLookup);
       if(normalizedPins.length>0){
+        const snapshotChanged=normalizedPins.length!==pinSnapshot.length||normalizedPins.some((pin,index)=>pin.pinId!==pinSnapshot[index]?.pinId);
         const mediaByPin=new Map<string,unknown>();for(const observation of result.acceptedObservations){const canonical=canonicalPayload(observation),id=optionalText(canonical?.resourceId,128);if(id)mediaByPin.set(id,canonical?.media);}
         pinSnapshot=await mergePinThumbnails(normalizedPins,mediaByPin,pinSnapshot,request.thumbnailFetcher??fetchPinterestThumbnail);
         contentAudit=auditPinterestContent(pinSnapshot.map(pin=>({pinId:pin.pinId,title:pin.title,description:pin.description,createdAt:pin.createdAt,boardName:pin.boardName,destinationDomain:pin.destinationDomain,thumbnailPresent:pin.thumbnail!==null})));
+        if(snapshotChanged)organicAnalytics=emptyPinterestOrganicAnalytics();
       }else if(result.finalState==="NoData"&&result.summary.properties.rawRecordsCollected===0){
         pinSnapshot=normalizedPins;
         contentAudit=auditPinterestContent([]);
+        organicAnalytics=emptyPinterestOrganicAnalytics();
       }else if(["Failed","Unavailable"].includes(result.finalState))contentAudit=withPinterestContentAuditState(contentAudit,"TemporarilyUnavailable");
       return {
         state: result.finalState,
@@ -267,6 +272,22 @@ export function createPinterestElectronComposition(request:PinterestElectronComp
         pins: pinSnapshot,
         audit: contentAudit,
       };
+    },
+    async readPerformance(input:Record<string, unknown> = {}) {
+      if (!pinSnapshot.length) return organicAnalytics=emptyPinterestOrganicAnalytics();
+      const context=common(input),window=pinterestCompletedUtcWindow(clock()),pinIds=pinSnapshot.map(pin=>pin.pinId).slice(0,25);
+      try {
+        const interrupted=new InterruptedOperationReference({tcoTaskReference:"ElectronUI",sourceAdapterReference:ADAPTER_ID,businessPackageId,correlationIdentifier:context.correlationIdentifier});
+        const authentication=await request.registration.authentication.authenticate(new ExternalAuthenticationRequest({id:new ExternalAuthenticationId(`electron-pinterest-organic-analytics:${++sequence}`),credentialId,method:ExternalAuthenticationMethod.OAuth,businessPackageId,sourceAdapterReference:ADAPTER_ID,requestedCapability:"PerformanceObservation",tcoTaskReference:"ElectronUI",sourceRequestReference:`electron-pinterest-organic-analytics:${sequence}`,correlationIdentifier:context.correlationIdentifier,requestingAuthorityReference:"ElectronUI",requestedAt:clock(),interruptedOperation:interrupted}));
+        if(!authentication.successful)return organicAnalytics=emptyPinterestOrganicAnalytics("ReauthorizationRequired");
+        const response=await request.registration.transport.execute({baseUrl:request.apiBaseUrl,environment:PinterestEnvironment.Production,path:"/v5/pins/analytics",query:{pin_ids:pinIds.join(","),start_date:window.startDate,end_date:window.endDate,metric_types:PINTEREST_ORGANIC_METRICS.join(",")},timeoutMs:30_000,session:authentication.session});
+        if(response.status===401||response.status===403)return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"Unavailable");
+        if(response.status===429)return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"RateLimited");
+        if(response.status!==200)return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"Failed");
+        return organicAnalytics=parsePinterestOrganicAnalytics(response.body,pinIds,window);
+      } catch {
+        return organicAnalytics=withPinterestOrganicAnalyticsState(organicAnalytics,"Failed");
+      }
     },
     verificationRepository,
     observationWorkflow,

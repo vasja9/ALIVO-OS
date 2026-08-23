@@ -200,7 +200,7 @@ export function createPinterestDomHarness(preload = {}) {
     calls.push({ name, type: "invoke", input });
     return original(input);
   };
-  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation"]) {
+  for (const name of ["startOAuth", "connectionStatus", "verifyConnection", "readObservation", "readPerformance"]) {
     if (typeof preload[name] === "function") {
       const original = preload[name];
       preload[name] = input => invoke(name, input, original);
