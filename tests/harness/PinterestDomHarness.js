@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 class HarnessNode {
-  constructor(tagName = "fragment") {
+  constructor(tagName = "fragment", namespaceURI = null) {
     this.tagName = tagName.toUpperCase();
+    this.namespaceURI = namespaceURI;
     this.children = [];
     this.parentNode = undefined;
     this.dataset = Object.create(null);
@@ -100,6 +101,9 @@ class HarnessDocument extends HarnessNode {
   }
   createElement(tagName) {
     return new HarnessNode(tagName);
+  }
+  createElementNS(namespaceURI, tagName) {
+    return new HarnessNode(tagName, namespaceURI);
   }
   createDocumentFragment() {
     return new HarnessFragment();

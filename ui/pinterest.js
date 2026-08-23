@@ -34,6 +34,7 @@ let verifyInFlight = false;
 let observationInFlight = false;
 let accountPerformanceInFlight = false;
 let performanceInFlight = false;
+let accountTrendMetric = "impressions";
 let pollAttempts = 0;
 
 const api = () => globalThis.window?.alivoPinterest;
@@ -50,6 +51,9 @@ const metricValue = value => value === null || value === undefined ? "Unavailabl
 const accountDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? displayDate(`${value}T00:00:00.000Z`) : "";
 const dailyMetricValue = value => value === null || value === undefined ? "\u2014" : String(value);
 const accountDailyColumns = Object.freeze([Object.freeze({key:"date",label:"Date"}),Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
+const accountTrendMetrics = Object.freeze([Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
+const accountTrendChartSize = Object.freeze({width:640,height:240,left:48,right:16,top:20,bottom:36});
+const svgNamespace = "http://www.w3.org/2000/svg";
 
 function observationSummary() {
   const observation = connection.observation;
@@ -195,6 +199,43 @@ function stableAccountRows(rows,column,direction) {
   return rows.map((item,index)=>({item,index})).sort((left,right)=>{const leftValue=left.item[column.key],rightValue=right.item[column.key],leftMissing=leftValue===null||leftValue===undefined,rightMissing=rightValue===null||rightValue===undefined;if(leftMissing||rightMissing){if(leftMissing&&rightMissing)return left.index-right.index;return leftMissing?1:-1}const comparison=leftValue<rightValue?-1:leftValue>rightValue?1:0;return comparison===0?left.index-right.index:direction==="ascending"?comparison:-comparison}).map(entry=>entry.item);
 }
 
+const accountTrendNumber = value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+const accountTrendCoordinate = (value, maximum) => String(Math.min(maximum, Math.max(0, Math.round((Number.isFinite(value) ? value : 0) * 100) / 100)));
+
+function accountTrendRows(daily) {
+  return daily.slice(0,30).flatMap(item=>typeof item?.date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(item.date)&&accountDay(item.date)?[{date:item.date,impressions:accountTrendNumber(item.impressions),saves:accountTrendNumber(item.saves),pinClicks:accountTrendNumber(item.pinClicks),outboundClicks:accountTrendNumber(item.outboundClicks)}]:[]).sort((left,right)=>left.date.localeCompare(right.date));
+}
+
+function accountTrendSvg(rows, metric) {
+  const values=rows.map((item,index)=>({index,date:item.date,value:item[metric.key]})),usable=values.filter(item=>item.value!==null);
+  if(!usable.length)return null;
+  const {width,height,left,right,top,bottom}=accountTrendChartSize,plotWidth=width-left-right,baseline=height-bottom,plotHeight=baseline-top,maximum=Math.max(0,...usable.map(item=>item.value)),lastIndex=Math.max(rows.length-1,1);
+  const points=values.map(item=>item.value===null?null:{...item,x:rows.length===1?left+plotWidth/2:left+plotWidth*item.index/lastIndex,y:baseline-plotHeight*(maximum===0?0:item.value/maximum)});
+  const svg=document.createElementNS(svgNamespace,"svg");
+  svg.setAttribute("class","account-trend-chart");
+  svg.setAttribute("viewBox",`0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+  svg.setAttribute("role","img");
+  svg.setAttribute("aria-label",`${metric.label} organic account trend from ${accountDay(rows[0].date)} to ${accountDay(rows.at(-1).date)} with ${usable.length} usable daily values.`);
+  const baselineLine=document.createElementNS(svgNamespace,"line");
+  baselineLine.setAttribute("class","account-trend-baseline");
+  baselineLine.setAttribute("x1",accountTrendCoordinate(left,width));baselineLine.setAttribute("y1",accountTrendCoordinate(baseline,height));baselineLine.setAttribute("x2",accountTrendCoordinate(width-right,width));baselineLine.setAttribute("y2",accountTrendCoordinate(baseline,height));
+  svg.append(baselineLine);
+  let segment=[];
+  const appendSegment=()=>{if(segment.length>1){const line=document.createElementNS(svgNamespace,"polyline");line.setAttribute("class","account-trend-line");line.setAttribute("points",segment.map(point=>`${accountTrendCoordinate(point.x,width)},${accountTrendCoordinate(point.y,height)}`).join(" "));svg.append(line)}segment=[]};
+  for(const point of points){if(point===null){appendSegment();continue}segment.push(point)}appendSegment();
+  for(const point of points){if(point===null)continue;const marker=document.createElementNS(svgNamespace,"circle");marker.setAttribute("class","account-trend-point");marker.setAttribute("cx",accountTrendCoordinate(point.x,width));marker.setAttribute("cy",accountTrendCoordinate(point.y,height));marker.setAttribute("r","3");svg.append(marker)}
+  for(const [x,anchor,label] of [[left,"start",accountDay(rows[0].date)],[width-right,"end",accountDay(rows.at(-1).date)]]){const text=document.createElementNS(svgNamespace,"text");text.setAttribute("class","account-trend-axis-label");text.setAttribute("x",accountTrendCoordinate(x,width));text.setAttribute("y",accountTrendCoordinate(height-10,height));text.setAttribute("text-anchor",anchor);text.textContent=label;svg.append(text)}
+  return svg;
+}
+
+function accountTrendView(daily) {
+  const section=createElement("section","account-performance-trend"),selectors=createElement("div","account-trend-selectors"),chart=createElement("div","account-trend-chart-frame"),rows=accountTrendRows(daily),buttons=[];
+  const renderChart=()=>{const metric=accountTrendMetrics.find(item=>item.key===accountTrendMetric)??accountTrendMetrics[0];for(const button of buttons)button.setAttribute("aria-pressed",String(button.dataset.accountTrendMetric===metric.key));const svg=accountTrendSvg(rows,metric);chart.replaceChildren(svg??createElement("p","account-trend-empty","No usable daily values"))};
+  for(const metric of accountTrendMetrics){const button=createElement("button","account-trend-selector",metric.label);button.type="button";button.dataset.accountTrendMetric=metric.key;button.onclick=()=>{accountTrendMetric=metric.key;renderChart()};buttons.push(button);selectors.append(button)}
+  section.append(createElement("h3","","30-day organic trend"),selectors,chart,createElement("p","account-trend-note","Local visualization of the already-read organic account metrics."));renderChart();return section;
+}
+
 function accountDailyTable(daily) {
   const wrapper=createElement("div","account-performance-table-wrap"),table=createElement("table","account-performance-table"),head=createElement("thead"),body=createElement("tbody");
   let rows=daily.slice(0,30),sort=null;
@@ -217,6 +258,7 @@ function accountPerformanceView() {
   if(performance?.latestAvailableDate)card.append(createElement("p","quiet",`Latest available date: ${performance.latestAvailableDate}`));
   if(performance?.totals){const metrics=createElement("div","pin-kpis");for(const [label,key] of [["Impressions","impressions"],["Saves","saves"],["Pin clicks","pinClicks"],["Outbound clicks","outboundClicks"]]){const metric=createElement("div","pin-metric");metric.append(createElement("span","",label),createElement("strong","",metricValue(performance.totals[key])));metrics.append(metric)}card.append(metrics)}
   if(performance?.state==="NoData")card.append(createElement("p","","No organic account metrics were available for this date window."));
+  if(performance?.daily?.length&&(performance.state==="Available"||performance.stale))card.append(accountTrendView(performance.daily));
   if(performance?.daily?.length)card.append(createElement("h3","","Daily organic metrics"),accountDailyTable(performance.daily));
   return card;
 }

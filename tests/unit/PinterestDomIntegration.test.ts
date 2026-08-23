@@ -333,10 +333,10 @@ test("temporary observation failure retains the last safe audit and duplicate re
 
 test("account performance is explicit, independent, bounded, stale-safe, and provider text stays inert",async()=>{
   const metric=(index,offset)=>index<5?[0,20,100,100,null][(index+offset)%5]:index;
-  const daily=Array.from({length:31},(_,index)=>({date:new Date(Date.UTC(2026,6,24+index)).toISOString().slice(0,10),impressions:metric(index,0),saves:metric(index,1),pinClicks:metric(index,2),outboundClicks:metric(index,3),providerPayload:"daily-secret"}));
+  const daily=Array.from({length:31},(_,index)=>({date:new Date(Date.UTC(2026,6,24+index)).toISOString().slice(0,10),impressions:metric(index,0),saves:metric(index,1),pinClicks:metric(index,2),outboundClicks:metric(index,3),providerPayload:"daily-secret",providerUrl:"https://provider.invalid/private",headers:{authorization:"provider-header"},oauthToken:"provider-token",cookie:"provider-cookie",callbackData:"provider-callback",thumbnail:"provider-thumbnail"}));
   daily[30]={...daily[30],impressions:999,saves:999,pinClicks:999,outboundClicks:999};
   const originalDaily=JSON.stringify(daily);
-  const availableAccount={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},latestAvailableDate:"2026-08-21",totals:{impressions:0,saves:2,pinClicks:null,outboundClicks:1},daily,stale:false,rawProvider:"account-secret"};
+  const availableAccount={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},latestAvailableDate:"2026-08-21",totals:{impressions:0,saves:2,pinClicks:null,outboundClicks:1},daily,stale:false,rawProvider:"account-secret",providerUrl:"https://provider.invalid/account",headers:{cookie:"account-header"},oauthToken:"account-token",callbackData:"account-callback"};
   const retained={...availableAccount,state:"Failed",stale:true};
   const harness=await createPinterestDomHarness(preloadFor({connectionStatus:async()=>authenticated,readAccountPerformance:sequence(availableAccount,retained),readPerformance:async()=>({ok:true,state:"Failed",window:null,totals:null,pins:[]})})).start();
   assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.callCount("readPerformance"),0);
@@ -344,25 +344,73 @@ test("account performance is explicit, independent, bounded, stale-safe, and pro
   assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.callCount("readPerformance"),0);
   harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
   assert.equal(harness.callCount("readAccountPerformance"),0);assert.equal(harness.hasText("Organic account metrics · Read-only"),true);
+  assert.equal(harness.document.querySelector(".account-performance-trend"),undefined);
   await harness.clickAction("account-performance");
   assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
   assert.equal(harness.hasText("2026-07-24 to 2026-08-22 · 30 completed UTC days"),true);assert.equal(harness.hasText("Latest available date: 2026-08-21"),true);
   assert.equal(harness.hasText("Impressions0Saves2Pin clicksUnavailableOutbound clicks1"),true);
+  assert.equal(harness.hasText("30-day organic trend"),true);assert.equal(harness.hasText("Local visualization of the already-read organic account metrics."),true);
+  const trendButton=key=>harness.document.querySelector(`[data-account-trend-metric="${key}"]`),trendSvg=()=>harness.document.querySelector(".account-trend-chart"),trendPoints=()=>harness.document.querySelectorAll(".account-trend-point"),trendLines=()=>harness.document.querySelectorAll(".account-trend-line");
+  const trendKeys=["impressions","saves","pinClicks","outboundClicks"],trendLabels=["Impressions","Saves","Pin clicks","Outbound clicks"],trendButtons=trendKeys.map(trendButton);
+  assert.deepEqual(trendButtons.map(button=>button.textContent),trendLabels);assert.equal(trendButtons.every(button=>button.tagName==="BUTTON"&&button.type==="button"),true);
+  assert.deepEqual(trendButtons.map(button=>button.getAttribute("aria-pressed")),["true","false","false","false"]);
+  const defaultTrend=trendSvg();assert.equal(defaultTrend.tagName,"SVG");assert.equal(defaultTrend.namespaceURI,"http://www.w3.org/2000/svg");assert.equal(defaultTrend.getAttribute("role"),"img");assert.equal(defaultTrend.getAttribute("viewBox"),"0 0 640 240");assert.equal(defaultTrend.getAttribute("aria-label"),"Impressions organic account trend from 24.07.26 to 22.08.26 with 29 usable daily values.");
+  assert.equal(defaultTrend.textContent,"24.07.2622.08.26");assert.equal(trendPoints().length,29);assert.equal(trendLines().length,2);
+  const initialY=trendPoints().slice(0,3).map(point=>Number(point.getAttribute("cy")));assert.equal(initialY[2]<initialY[1]&&initialY[1]<initialY[0],true);
+  const svgTags=[],svgAttributes=[];const inspectSvg=node=>{svgTags.push(node.tagName);assert.equal(node.namespaceURI,"http://www.w3.org/2000/svg");for(const [name,value] of Object.entries(node.attributes)){svgAttributes.push([name,value]);assert.equal(/^on|^(?:href|xlink:href|style)$/i.test(name),false);assert.equal(/NaN|Infinity/.test(value),false)}for(const child of node.children)inspectSvg(child)};inspectSvg(defaultTrend);
+  assert.equal(svgTags.some(tag=>["FOREIGNOBJECT","IMAGE","A"].includes(tag)),false);
+  for(const [name,value] of svgAttributes){if(["x1","y1","x2","y2","cx","cy","r","x","y"].includes(name)){const numeric=Number(value);assert.equal(Number.isFinite(numeric)&&numeric>=0&&numeric<=640,true)}if(name==="points")for(const coordinate of value.split(/[ ,]/)){const numeric=Number(coordinate);assert.equal(Number.isFinite(numeric)&&numeric>=0&&numeric<=640,true)}}
   const table=harness.document.querySelector(".account-performance-table"),tableRows=()=>table.children[1].children,headerCells=()=>table.children[0].children[0].children,sortButton=key=>harness.document.querySelector(`[data-account-sort="${key}"]`),rowDates=()=>tableRows().map(row=>row.children[0].textContent),columnValues=index=>tableRows().map(row=>row.children[index].textContent);
   const expectedHeadings=["Date","Impressions","Saves","Pin clicks","Outbound clicks"],accountDailyColumnsForTest=["date","impressions","saves","pinClicks","outboundClicks"],buttons=headerCells().map(cell=>cell.children[0]);
   const assertActive=(key,direction,indicator)=>{for(const cell of headerCells()){const button=cell.children[0],active=button.dataset.accountSort===key;assert.equal(cell.getAttribute("aria-sort"),active?direction:undefined);assert.equal(button.textContent,expectedHeadings[accountDailyColumnsForTest.indexOf(button.dataset.accountSort)]+(active?indicator:""))}};
   assert.equal(table.tagName,"TABLE");assert.deepEqual(headerCells().map(cell=>cell.textContent),expectedHeadings);assert.equal(headerCells().every(cell=>cell.tagName==="TH"&&cell.getAttribute("scope")==="col"&&cell.getAttribute("aria-sort")===undefined),true);assert.equal(buttons.every(button=>button.tagName==="BUTTON"&&button.type==="button"),true);
   assert.equal(tableRows().length,30);assert.deepEqual(tableRows()[0].children.map(cell=>cell.textContent),["24.07.26","0","20","100","100"]);assert.deepEqual([rowDates()[0],rowDates().at(-1)],["24.07.26","22.08.26"]);
+  const chronologicalRows=rowDates().slice(),assertTrendPressed=active=>{for(const key of trendKeys)assert.equal(trendButton(key).getAttribute("aria-pressed"),String(key===active))};
+  for(let index=0;index<trendKeys.length;index++){const key=trendKeys[index],button=trendButton(key);if(index===0)button.pressKey("Enter");else if(index===1)button.pressKey(" ");else button.click();assertTrendPressed(key);assert.match(trendSvg().getAttribute("aria-label"),new RegExp(`^${trendLabels[index]} organic account trend from 24\\.07\\.26 to 22\\.08\\.26 with \\d+ usable daily values\\.$`));assert.deepEqual(rowDates(),chronologicalRows);assert.equal(harness.document.querySelector(".account-performance-table"),table);assert.equal(harness.callCount("readAccountPerformance"),1)}
+  trendButton("impressions").click();assertTrendPressed("impressions");
+  const chartBeforeTableSort=trendSvg(),chartCoordinatesBeforeSort=trendPoints().map(point=>[point.getAttribute("cx"),point.getAttribute("cy")]);
   sortButton("date").pressKey("Enter");assert.deepEqual([rowDates()[0],rowDates().at(-1)],["22.08.26","24.07.26"]);assertActive("date","descending","\u25bc");
+  assert.equal(trendSvg(),chartBeforeTableSort);assert.deepEqual(trendPoints().map(point=>[point.getAttribute("cx"),point.getAttribute("cy")]),chartCoordinatesBeforeSort);assert.equal(trendSvg().textContent,"24.07.2622.08.26");
   sortButton("date").pressKey(" ");assert.deepEqual([rowDates()[0],rowDates().at(-1)],["24.07.26","22.08.26"]);assertActive("date","ascending","\u25b2");
   for(const [key,index] of [["impressions",1],["saves",2],["pinClicks",3],["outboundClicks",4]]){const equalOrder=()=>tableRows().filter(row=>row.children[index].textContent==="100").map(row=>row.children[0].textContent),before=equalOrder();sortButton(key).click();let values=columnValues(index);assert.equal(values.indexOf("100")<values.indexOf("20"),true);assert.equal(values.includes("0"),true);assert.equal(values.at(-1),"\u2014");assert.deepEqual(equalOrder(),before);assertActive(key,"descending","\u25bc");const descendingEqual=equalOrder();sortButton(key).click();values=columnValues(index);assert.equal(values.indexOf("20")<values.indexOf("100"),true);assert.equal(values.includes("0"),true);assert.equal(values.at(-1),"\u2014");assert.deepEqual(equalOrder(),descendingEqual);assertActive(key,"ascending","\u25b2")}
   assert.equal(JSON.stringify(daily),originalDaily);assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
-  const rows=tableRows(),tableTags=[];const visit=node=>{tableTags.push(node.tagName);for(const child of node.children)visit(child)};visit(table);assert.deepEqual([...new Set(tableTags)].sort(),["BUTTON","SPAN","TABLE","TBODY","TD","TH","THEAD","TR"].sort());for(const forbidden of ["daily-secret","account-secret","2026-08-23"])assert.equal(harness.hasText(forbidden),false);assert.equal(rows.some(row=>row.children.some(cell=>cell.textContent==="999")),false);
+  const rows=tableRows(),tableTags=[];const visit=node=>{tableTags.push(node.tagName);for(const child of node.children)visit(child)};visit(table);assert.deepEqual([...new Set(tableTags)].sort(),["BUTTON","SPAN","TABLE","TBODY","TD","TH","THEAD","TR"].sort());for(const forbidden of ["daily-secret","account-secret","provider.invalid","provider-header","provider-token","provider-cookie","provider-callback","provider-thumbnail","account-header","account-token","account-callback","2026-08-23"])assert.equal(harness.hasText(forbidden),false);assert.equal(rows.some(row=>row.children.some(cell=>cell.textContent==="999")),false);
   harness.document.querySelector('[data-pin-view="all"]').click();harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();
   assert.equal(harness.callCount("readAccountPerformance"),1);assert.equal(harness.callCount("readPerformance"),0);
   await harness.clickAction("account-performance");
   assert.equal(harness.callCount("readAccountPerformance"),2);assert.equal(harness.callCount("readPerformance"),0);assert.equal(harness.hasText("last valid account analytics snapshot remains visible as stale data"),true);
+  assert.equal(harness.document.querySelector(".account-trend-chart").getAttribute("aria-label"),"Impressions organic account trend from 24.07.26 to 22.08.26 with 29 usable daily values.");assert.equal(harness.document.querySelector('[data-account-trend-metric="impressions"]').getAttribute("aria-pressed"),"true");
   assert.equal(harness.document.querySelectorAll("a").length,0);
+});
+
+test("account trend handles bounded, all-zero, missing, one-point, no-data, and authentication-clearing states",async()=>{
+  const window={startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30};
+  const available=daily=>({ok:true,state:"Available",window,latestAvailableDate:"2026-08-22",totals:null,daily,stale:false});
+  const openAndRead=async preload=>{const harness=await createPinterestDomHarness(preloadFor(preload)).start();harness.document.querySelector('[data-pin-view="performance"]').click();await harness.settle();assert.equal(harness.document.querySelector(".account-performance-trend"),undefined);await harness.clickAction("account-performance");assert.equal(harness.callCount("readAccountPerformance"),1);return harness};
+
+  const boundedDaily=Array.from({length:31},(_,index)=>({date:new Date(Date.UTC(2026,6,24+index)).toISOString().slice(0,10),impressions:index===30?999:index,saves:index,pinClicks:index,outboundClicks:index}));
+  const boundedOriginal=JSON.stringify(boundedDaily),bounded=await openAndRead({connectionStatus:async()=>authenticated,readAccountPerformance:async()=>available(boundedDaily)});
+  assert.equal(bounded.document.querySelectorAll(".account-trend-point").length,30);assert.equal(bounded.document.querySelector(".account-trend-chart").getAttribute("aria-label"),"Impressions organic account trend from 24.07.26 to 22.08.26 with 30 usable daily values.");assert.equal(bounded.document.querySelector(".account-performance-table").children[1].children.some(row=>row.children.some(cell=>cell.textContent==="999")),false);assert.equal(JSON.stringify(boundedDaily),boundedOriginal);
+
+  const zeroDaily=["2026-07-24","2026-07-25","2026-07-26"].map(date=>({date,impressions:0,saves:0,pinClicks:0,outboundClicks:0}));
+  const zero=await openAndRead({connectionStatus:async()=>authenticated,readAccountPerformance:async()=>available(zeroDaily)});
+  const zeroPoints=zero.document.querySelectorAll(".account-trend-point"),zeroLine=zero.document.querySelector(".account-trend-line");
+  assert.equal(zeroPoints.length,3);assert.equal(new Set(zeroPoints.map(point=>point.getAttribute("cy"))).size,1);assert.equal(zeroPoints[0].getAttribute("cy"),zero.document.querySelector(".account-trend-baseline").getAttribute("y1"));assert.equal(/NaN|Infinity|-\d/.test(zeroLine.getAttribute("points")),false);
+  zero.document.querySelector('[data-account-trend-metric="saves"]').pressKey("Enter");assert.equal(zero.callCount("readAccountPerformance"),1);assert.equal(zero.document.querySelectorAll(".account-trend-point").length,3);
+
+  const one=await openAndRead({connectionStatus:async()=>authenticated,readAccountPerformance:async()=>available([{date:"2026-07-24",impressions:100,saves:null,pinClicks:null,outboundClicks:null}])});
+  assert.equal(one.document.querySelectorAll(".account-trend-point").length,1);assert.equal(one.document.querySelectorAll(".account-trend-line").length,0);assert.match(one.document.querySelector(".account-trend-chart").getAttribute("aria-label"),/with 1 usable daily values\.$/);
+
+  const missingDaily=[{date:"2026-07-24",impressions:null,saves:20,pinClicks:null,outboundClicks:null},{date:"2026-07-25",impressions:null,saves:100,pinClicks:null,outboundClicks:null}];
+  const missing=await openAndRead({connectionStatus:async()=>authenticated,readAccountPerformance:async()=>available(missingDaily)});
+  assert.equal(missing.document.querySelector(".account-trend-chart"),undefined);assert.equal(missing.hasText("No usable daily values"),true);
+  missing.document.querySelector('[data-account-trend-metric="saves"]').pressKey(" ");assert.equal(missing.document.querySelectorAll(".account-trend-point").length,2);assert.equal(missing.callCount("readAccountPerformance"),1);
+
+  const noData=await openAndRead({connectionStatus:async()=>authenticated,readAccountPerformance:async()=>({ok:true,state:"NoData",window,latestAvailableDate:null,totals:null,daily:[],stale:false})});
+  assert.equal(noData.hasText("No organic account metrics were available for this date window."),true);assert.equal(noData.document.querySelector(".account-performance-trend"),undefined);
+
+  const clearing=await openAndRead({connectionStatus:sequence(authenticated,{ok:true,state:"ReauthorizationRequired"}),readAccountPerformance:async()=>available(zeroDaily)});
+  assert.notEqual(clearing.document.querySelector(".account-trend-chart"),undefined);await clearing.clickAction("refresh");assert.equal(clearing.document.querySelector(".account-performance-trend"),undefined);assert.equal(clearing.hasText("Reauthorization required"),true);assert.equal(clearing.callCount("readAccountPerformance"),1);
 });
 
 test("organic performance is explicit, snapshot-bound, null-safe, and provider text stays inert",async()=>{

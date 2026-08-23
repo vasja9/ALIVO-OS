@@ -128,6 +128,31 @@ test("Pinterest UI thumbnail boundary accepts only bounded image DTO data",()=>{
   assert.doesNotMatch(stateSource,/base64\.(?:trim|slice)|text\(thumbnail\.base64\)|slice\(0,\s*240\).*base64/);
 });
 
+test("account trend renderer input is an immutable five-field DTO cleared by authentication loss",()=>{
+  const snapshot={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},latestAvailableDate:"2026-08-22",totals:null,daily:[
+    {date:"2026-07-25",impressions:100,saves:0,pinClicks:null,outboundClicks:2,pin:{title:"private"},board:{name:"private"},thumbnail:"private",url:"https://provider.invalid/private",providerPayload:{secret:true},headers:{authorization:"secret"},oauthToken:"secret",cookie:"secret",callbackData:"secret",credential:"secret"},
+    {date:"2026-07-24",impressions:20,saves:1,pinClicks:3,outboundClicks:4},
+  ],stale:false};
+  let state=transition(createPinterestUiState(),{type:"ACCOUNT_PERFORMANCE_RESULT",value:snapshot});
+  assert.deepEqual(state.accountPerformance.daily,[
+    {date:"2026-07-24",impressions:20,saves:1,pinClicks:3,outboundClicks:4},
+    {date:"2026-07-25",impressions:100,saves:0,pinClicks:null,outboundClicks:2},
+  ]);
+  assert.deepEqual(Object.keys(state.accountPerformance.daily[0]),["date","impressions","saves","pinClicks","outboundClicks"]);
+  assert.equal(Object.isFrozen(state.accountPerformance),true);assert.equal(Object.isFrozen(state.accountPerformance.daily),true);assert.equal(Object.isFrozen(state.accountPerformance.daily[0]),true);
+  assert.equal(/"(?:pin|board|thumbnail|url|providerPayload|headers|oauthToken|cookie|callbackData|credential)"|secret/i.test(JSON.stringify(state.accountPerformance.daily)),false);
+  assert.equal(snapshot.daily[0].providerPayload.secret,true);assert.equal(snapshot.daily[0].saves,0);
+
+  for(const status of [{ok:true,state:"ReauthorizationRequired"},{ok:true,state:"AuthenticationRequired"}]){
+    let authenticatedState=transition(createPinterestUiState(),{type:"STATUS_RESULT",value:{ok:true,state:"Authenticated"}});
+    authenticatedState=transition(authenticatedState,{type:"ACCOUNT_PERFORMANCE_RESULT",value:snapshot});
+    const cleared=transition(authenticatedState,{type:"STATUS_RESULT",value:status});
+    assert.equal(cleared.accountPerformance.state,"NotRead");assert.deepEqual(cleared.accountPerformance.daily,[]);
+  }
+  state=transition(state,{type:"ACCOUNT_PERFORMANCE_RESULT",value:{state:"ReauthorizationRequired",daily:snapshot.daily}});
+  assert.equal(state.accountPerformance.state,"ReauthorizationRequired");assert.deepEqual(state.accountPerformance.daily,[]);
+});
+
 test("Pinterest UI preserves a verified connection when observation data is unavailable", () => {
   let state = transition(createPinterestUiState(), { type: "VERIFY_RESULT", value: { ok: true, state: "Available", authenticationState: "Authenticated" } });
   state = transition(state, { type: "OBSERVATION_REQUEST" });
