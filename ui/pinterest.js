@@ -54,6 +54,8 @@ const dailyMetricValue = value => value === null || value === undefined ? "\u201
 const accountDailyColumns = Object.freeze([Object.freeze({key:"date",label:"Date"}),Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
 const accountTrendMetrics = Object.freeze([Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
 const accountTrendChartSize = Object.freeze({width:640,height:240,left:48,right:16,top:20,bottom:36});
+const topPinsMetrics=Object.freeze([Object.freeze({key:"impressions",label:"Impressions"}),Object.freeze({key:"saves",label:"Saves"}),Object.freeze({key:"pinClicks",label:"Pin clicks"}),Object.freeze({key:"outboundClicks",label:"Outbound clicks"})]);
+const topPinsColumns=Object.freeze([Object.freeze({key:"rank",label:"Rank",type:"number"}),Object.freeze({key:"title",label:"Pin",type:"text"}),Object.freeze({key:"boardName",label:"Board",type:"text"}),...topPinsMetrics.map(metric=>Object.freeze({...metric,type:"number"}))]);
 const svgNamespace = "http://www.w3.org/2000/svg";
 
 function observationSummary() {
@@ -285,6 +287,23 @@ function pinPerformanceView() {
   return card;
 }
 
+function stableTopPinsRows(rows,column,direction){
+  const multiplier=direction==="ascending"?1:-1;
+  return rows.map((row,index)=>({row,index})).sort((left,right)=>{const a=left.row[column.key],b=right.row[column.key],aMissing=a===null,bMissing=b===null;if(aMissing||bMissing)return aMissing===bMissing?left.index-right.index:aMissing?1:-1;const comparison=column.type==="text"?String(a).toLocaleLowerCase("en-US").localeCompare(String(b).toLocaleLowerCase("en-US"),"en-US"):a-b;return comparison===0?left.index-right.index:comparison*multiplier}).map(item=>item.row);
+}
+
+function topPinsComparison(rows,window){
+  const section=createElement("section","top-pins-comparison"),selectors=createElement("div","top-pins-selectors"),frame=createElement("div","top-pins-chart-frame"),buttons=[];
+  let selected="outboundClicks";
+  const renderChart=()=>{const metric=topPinsMetrics.find(item=>item.key===selected)??topPinsMetrics[3];for(const button of buttons)button.setAttribute("aria-pressed",String(button.dataset.topPinsMetric===metric.key));const copied=rows.slice(0,25).map(row=>Object.freeze({...row})),ordered=copied.map((row,index)=>({row,index})).sort((a,b)=>{const av=a.row[metric.key],bv=b.row[metric.key];if(av===null||bv===null)return av===bv?a.index-b.index:av===null?1:-1;return bv-av||a.index-b.index}).map(item=>item.row),usable=ordered.filter(row=>row[metric.key]!==null);if(!usable.length){frame.replaceChildren(createElement("p","top-pins-chart-empty","No usable Top Pins values"));return}const width=640,height=260,left=32,right=16,top=20,baseline=220,plotWidth=width-left-right,plotHeight=baseline-top,maximum=Math.max(0,...usable.map(row=>row[metric.key])),slot=plotWidth/usable.length,barWidth=Math.min(28,Math.max(4,slot*.6)),svg=document.createElementNS(svgNamespace,"svg");svg.setAttribute("class","top-pins-chart");svg.setAttribute("viewBox","0 0 640 260");svg.setAttribute("role","img");svg.setAttribute("aria-label",`${metric.label} Top Pins comparison from ${accountDay(window.startDate)} to ${accountDay(window.endDate)} with ${usable.length} usable values.`);const line=document.createElementNS(svgNamespace,"line");line.setAttribute("class","top-pins-baseline");line.setAttribute("x1",String(left));line.setAttribute("y1",String(baseline));line.setAttribute("x2",String(width-right));line.setAttribute("y2",String(baseline));svg.append(line);usable.forEach((row,index)=>{const value=row[metric.key],barHeight=maximum===0?0:plotHeight*value/maximum,x=left+slot*index+(slot-barWidth)/2,y=baseline-barHeight,bar=document.createElementNS(svgNamespace,"rect");bar.setAttribute("class","top-pins-bar");bar.setAttribute("x",String(Math.max(0,x)));bar.setAttribute("y",String(Math.max(0,y)));bar.setAttribute("width",String(barWidth));bar.setAttribute("height",String(Math.max(0,barHeight)));bar.setAttribute("role","img");bar.setAttribute("aria-label",`Rank ${row.rank}: ${row.title}; ${metric.label}: ${value}`);svg.append(bar)});frame.replaceChildren(svg)};
+  for(const metric of topPinsMetrics){const button=createElement("button","top-pins-selector",metric.label);button.type="button";button.dataset.topPinsMetric=metric.key;button.onclick=()=>{selected=metric.key;renderChart()};buttons.push(button);selectors.append(button)}section.append(createElement("h3","","Top Pins comparison"),selectors,frame);renderChart();return section;
+}
+
+function topPinsTable(sourceRows){
+  const table=createElement("table","top-pins-table"),head=createElement("thead"),body=createElement("tbody");let rows=sourceRows.slice(0,25),sort={key:"rank",direction:"ascending"};
+  const renderTable=()=>{const header=createElement("tr");for(const column of topPinsColumns){const cell=createElement("th"),button=createElement("button","top-pins-sort"),indicator=createElement("span","top-pins-sort-indicator");cell.setAttribute("scope","col");const active=sort.key===column.key;cell.setAttribute("aria-sort",active?sort.direction:"none");button.type="button";button.dataset.topPinsSort=column.key;button.append(createElement("span","",column.label),indicator);indicator.setAttribute("aria-hidden","true");if(active)indicator.textContent=sort.direction==="ascending"?"▲":"▼";button.onclick=()=>{const direction=active?(sort.direction==="ascending"?"descending":"ascending"):(column.type==="text"?"ascending":"descending");rows=stableTopPinsRows(rows,column,direction);sort={key:column.key,direction};renderTable()};cell.append(button);header.append(cell)}const rendered=rows.map(item=>{const row=createElement("tr");row.append(createElement("td","",item.rank),createElement("td","",item.title),createElement("td","",item.boardName));for(const key of ["impressions","saves","pinClicks","outboundClicks"])row.append(createElement("td","",dailyMetricValue(item[key])));return row});head.replaceChildren(header);body.replaceChildren(...rendered)};renderTable();table.append(head,body);return table;
+}
+
 function topPinsView(){
   const snapshot=connection.observation?.pins??[],result=connection.topPins,card=createElement("article","card pinterest-top-pins");
   card.append(createElement("p","eyebrow","Top organic Pins · Read-only"),createElement("h2","","Top Pins"));
@@ -300,8 +319,8 @@ function topPinsView(){
   if(result?.window)card.append(createElement("p","pin-performance-window",`${accountDay(result.window.startDate)} to ${accountDay(result.window.endDate)} · 30 completed UTC days`));
   if(result?.state==="NoData")card.append(createElement("p","","No safely joinable Top Pins were available for this date window."));
   const safeById=new Map(snapshot.slice(0,25).map(pin=>[pin.pinId,pin])),rows=[];
-  for(const metrics of result?.pins??[]){const pin=safeById.get(metrics.pinId);if(!pin)continue;const row=createElement("tr");row.append(createElement("td","",rows.length+1),createElement("td","",pin.title||"Untitled Pin"),createElement("td","",pin.boardName||"Unknown board"));for(const key of ["impressions","saves","pinClicks","outboundClicks"])row.append(createElement("td","",dailyMetricValue(metrics[key])));rows.push(row)}
-  if(rows.length){const table=createElement("table","top-pins-table"),head=createElement("thead"),header=createElement("tr"),body=createElement("tbody");for(const label of ["Rank","Pin","Board","Impressions","Saves","Pin clicks","Outbound clicks"]){const cell=createElement("th","",label);cell.setAttribute("scope","col");header.append(cell)}head.append(header);body.append(...rows);table.append(head,body);card.append(table)}
+  for(const metrics of (result?.pins??[]).slice(0,25)){const pin=safeById.get(metrics.pinId);if(!pin)continue;rows.push(Object.freeze({rank:rows.length+1,title:pin.title||"Untitled Pin",boardName:pin.boardName||"Unknown board",impressions:metrics.impressions,saves:metrics.saves,pinClicks:metrics.pinClicks,outboundClicks:metrics.outboundClicks}))}
+  if(rows.length&&result?.window){const immutableRows=Object.freeze(rows.slice());card.append(topPinsComparison(immutableRows,result.window),topPinsTable(immutableRows))}
   return card;
 }
 
