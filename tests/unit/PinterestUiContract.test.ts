@@ -128,6 +128,29 @@ test("Pinterest UI thumbnail boundary accepts only bounded image DTO data",()=>{
   assert.doesNotMatch(stateSource,/base64\.(?:trim|slice)|text\(thumbnail\.base64\)|slice\(0,\s*240\).*base64/);
 });
 
+test("Top Pins readiness DTO validation is exact, frozen, row-local, and private-field free",()=>{
+  const window={startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},base={title:"<img src=x onerror=private()>",boardName:"Board",impressions:100,saves:2,pinClicks:3,outboundClicks:4,pinId:"raw-private-id",providerPayload:{secret:true},issueCodes:["PRIVATE_CODE"],issueMessages:["private message"]},result=pins=>({state:"Available",window,sortBy:"OUTBOUND_CLICK",pins,stale:false});
+  let state=transition(createPinterestUiState(),{type:"TOP_PINS_RESULT",value:result([
+    {...base,contentReadiness:{status:"Ready",issueCount:0,requiredIssueCount:0,reviewIssueCount:0}},
+    {...base,title:"Attention",contentReadiness:{status:"NeedsAttention",issueCount:3,requiredIssueCount:1,reviewIssueCount:2}},
+    {...base,title:"Unavailable",contentReadiness:null},
+  ])});
+  assert.deepEqual(state.topPins.pins,[
+    {title:"<img src=x onerror=private()>",boardName:"Board",impressions:100,saves:2,pinClicks:3,outboundClicks:4,contentReadiness:{status:"Ready",issueCount:0,requiredIssueCount:0,reviewIssueCount:0}},
+    {title:"Attention",boardName:"Board",impressions:100,saves:2,pinClicks:3,outboundClicks:4,contentReadiness:{status:"NeedsAttention",issueCount:3,requiredIssueCount:1,reviewIssueCount:2}},
+    {title:"Unavailable",boardName:"Board",impressions:100,saves:2,pinClicks:3,outboundClicks:4,contentReadiness:null},
+  ]);
+  assert.equal(Object.isFrozen(state.topPins),true);assert.equal(Object.isFrozen(state.topPins.pins),true);assert.equal(state.topPins.pins.every(pin=>Object.isFrozen(pin)&&(!pin.contentReadiness||Object.isFrozen(pin.contentReadiness))),true);
+  assert.equal(/raw-private-id|providerPayload|secret|PRIVATE_CODE|private message|issueCodes|issueMessages|pinId/.test(JSON.stringify(state.topPins)),false);
+  const cleared=transition(state,{type:"STATUS_RESULT",value:{ok:true,state:"ReauthorizationRequired"}});assert.equal(cleared.topPins.state,"NotRead");assert.deepEqual(cleared.topPins.pins,[]);
+  const prototypeReadiness=Object.assign(Object.create({inherited:true}),{status:"Ready",issueCount:0,requiredIssueCount:0,reviewIssueCount:0}),invalid=[
+    undefined,{},[],prototypeReadiness,{status:"Unknown",issueCount:0,requiredIssueCount:0,reviewIssueCount:0},{status:"Ready",issueCount:1,requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:0,requiredIssueCount:0,reviewIssueCount:0},{status:"NeedsAttention",issueCount:2,requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:-1,requiredIssueCount:0,reviewIssueCount:0},{status:"NeedsAttention",issueCount:1.5,requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:"1",requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:Infinity,requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:Number.MAX_SAFE_INTEGER,requiredIssueCount:1,reviewIssueCount:0},{status:"NeedsAttention",issueCount:13,requiredIssueCount:12,reviewIssueCount:1},{status:"NeedsAttention",issueCount:1,requiredIssueCount:1,reviewIssueCount:0,issues:[{code:"PRIVATE",message:"private"}]},
+  ];
+  for(const contentReadiness of invalid){state=transition(createPinterestUiState(),{type:"TOP_PINS_RESULT",value:result([{...base,contentReadiness}])});assert.equal(state.topPins.pins[0].contentReadiness,null);assert.deepEqual([state.topPins.pins[0].impressions,state.topPins.pins[0].saves,state.topPins.pins[0].pinClicks,state.topPins.pins[0].outboundClicks],[100,2,3,4])}
+  const prototypeRow=Object.assign(Object.create({providerPayload:"private"}),base,{contentReadiness:null});state=transition(createPinterestUiState(),{type:"TOP_PINS_RESULT",value:result([prototypeRow])});assert.deepEqual(state.topPins.pins,[]);
+  const safeTopPinsSource=stateSource.slice(stateSource.indexOf("const plainRecord"),stateSource.indexOf("function safeContentAudit"));assert.doesNotMatch(safeTopPinsSource,/allowed\.has|snapshot\.slice|return\[Object\.freeze\(\{pinId/);assert.match(safeTopPinsSource,/requiredIssueCount\+reviewIssueCount!==issueCount/);
+});
+
 test("account trend renderer input is an immutable five-field DTO cleared by authentication loss",()=>{
   const snapshot={ok:true,state:"Available",window:{startDate:"2026-07-24",endDate:"2026-08-22",completedDays:30},latestAvailableDate:"2026-08-22",totals:null,daily:[
     {date:"2026-07-25",impressions:100,saves:0,pinClicks:null,outboundClicks:2,pin:{title:"private"},board:{name:"private"},thumbnail:"private",url:"https://provider.invalid/private",providerPayload:{secret:true},headers:{authorization:"secret"},oauthToken:"secret",cookie:"secret",callbackData:"secret",credential:"secret"},

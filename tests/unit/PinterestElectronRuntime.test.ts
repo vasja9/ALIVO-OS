@@ -19,7 +19,7 @@ const { createPinterestContextResolver } = require("../../electron/pinterest-con
 const { createPinterestLifecycle } = require("../../electron/pinterest-lifecycle.cjs");
 const { createPinterestIpcController } = require("../../electron/pinterest-ipc-controller.cjs");
 const { transition, createPinterestUiState, PINTEREST_UI_STATE, safeObservation } = await import("../../ui/pinterest-connection-state.js");
-const { createPinterestElectronComposition, rendererSafePins } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
+const { createPinterestElectronComposition, rendererSafePins, rendererSafeTopPins } = await import("../../src/integrations/pinterest/PinterestElectronComposition.ts");
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
 const CONFIGURATION = {
@@ -626,6 +626,8 @@ test("live composition routes verification and observation through the governed 
   let boardRequests=0;
   let analyticsRequests=0;
   let analyticsQuery:Record<string,string>|undefined;
+  let topPinsRequests=0;
+  let topPinsQuery:Record<string,string>|undefined;
   let analyticsStatus=200;
   let analyticsThrows=false;
   let thumbnailRequests=0;
@@ -637,7 +639,7 @@ test("live composition routes verification and observation through the governed 
   const runtime = createPinterestRuntime({
     configuration: CONFIGURATION,
     sessionStore: store,
-    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}if(url.pathname==="/v5/pins/analytics"){analyticsRequests++;analyticsQuery=Object.fromEntries(url.searchParams);if(analyticsThrows)throw new Error("synthetic network detail");return response(analyticsStatus,Object.fromEntries(Array.from({length:25},(_,index)=>[`pin-${String(index).padStart(2,"0")}`,{summary_metrics:{IMPRESSION:index,SAVE:0,PIN_CLICK:index===0?undefined:1,OUTBOUND_CLICK:2},provider_url:"must-not-cross"}])))}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: {media_type:"image",images:{"400x300":index===1?{url:"https://i.pinimg.com/400x300/rejected.png",width:0,height:300}:{url:`https://i.pinimg.com/400x300/pin-${index}.${index===2?"webp":"jpg"}`,width:400,height:300},"150x150":{url:`https://i.pinimg.com/150x150/pin-${index}.png`,width:150,height:150}},arbitrary:"provider-object"} })) });},
+    fetchImpl: async input => {const url=new URL(String(input));if(url.pathname==="/v5/boards"){boardRequests++;boardQueries.push(Object.fromEntries(url.searchParams));return boardRequests===1?response(200,{items:[{id:"other",name:"Other"}],bookmark:"next-board-page"}):response(200,{items:[{id:"board-1",name:" <b>Main board</b> ",secret:"discard"}],bookmark:null});}if(url.pathname==="/v5/pins/analytics"){analyticsRequests++;analyticsQuery=Object.fromEntries(url.searchParams);if(analyticsThrows)throw new Error("synthetic network detail");return response(analyticsStatus,Object.fromEntries(Array.from({length:25},(_,index)=>[`pin-${String(index).padStart(2,"0")}`,{summary_metrics:{IMPRESSION:index,SAVE:0,PIN_CLICK:index===0?undefined:1,OUTBOUND_CLICK:2},provider_url:"must-not-cross"}])))}if(url.pathname==="/v5/user_account/analytics/top_pins"){topPinsRequests++;topPinsQuery=Object.fromEntries(url.searchParams);return response(200,{pins:[{pin_id:"pin-01",metrics:{IMPRESSION:20,SAVE:2,PIN_CLICK:3,OUTBOUND_CLICK:4},providerPayload:"discard"},{pin_id:"pin-00",metrics:{IMPRESSION:10,SAVE:1,PIN_CLICK:2,OUTBOUND_CLICK:3},issue_codes:["must-not-cross"]},{pin_id:"unknown",metrics:{IMPRESSION:999,SAVE:999,PIN_CLICK:999,OUTBOUND_CLICK:999}}]})}return response(200, { items: Array.from({length:25},(_,index)=>({ id: `pin-${String(index).padStart(2,"0")}`, is_owner: true, title: `Observed pin ${index}`, created_at: "2026-08-19T12:00:00.000Z", board_id: "board-1", link: "https://Example.test/path?private=value", access_token: "must-not-cross", media: {media_type:"image",images:{"400x300":index===1?{url:"https://i.pinimg.com/400x300/rejected.png",width:0,height:300}:{url:`https://i.pinimg.com/400x300/pin-${index}.${index===2?"webp":"jpg"}`,width:400,height:300},"150x150":{url:`https://i.pinimg.com/150x150/pin-${index}.png`,width:150,height:150}},arbitrary:"provider-object"} })) });},
     now: () => NOW,
   });
   const composition = createPinterestElectronComposition({
@@ -674,6 +676,12 @@ test("live composition routes verification and observation through the governed 
   assert.equal(analyticsRequests,1);assert.equal(performance.state,"Available");assert.equal(performance.pins.length,25);assert.equal(performance.pins[0].impressions,0);assert.equal(performance.pins[0].pinClicks,null);
   assert.deepEqual(analyticsQuery,{pin_ids:Array.from({length:25},(_,index)=>`pin-${String(index).padStart(2,"0")}`).join(","),start_date:"2026-07-20",end_date:"2026-08-18",metric_types:"IMPRESSION,SAVE,PIN_CLICK,OUTBOUND_CLICK"});
   assert.equal(/provider|url|base64|title|board|oauth|token|media/i.test(JSON.stringify(performance)),false);
+  const topPins=await composition.readTopPins({correlationIdentifier:"composition-top-pins"});
+  assert.equal(topPinsRequests,1);assert.equal(analyticsRequests,1);assert.equal(topPins.state,"Available");assert.equal(topPins.pins.length,2);
+  assert.deepEqual(topPins.pins[0],{title:"Observed pin 1",boardName:"<b>Main board</b>",impressions:20,saves:2,pinClicks:3,outboundClicks:4,contentReadiness:{status:"NeedsAttention",issueCount:2,requiredIssueCount:1,reviewIssueCount:1}});
+  assert.equal(Object.isFrozen(topPins.pins[0]),true);assert.equal(Object.isFrozen(topPins.pins[0].contentReadiness),true);
+  assert.equal(/pin-0|unknown|provider|issue_codes|message|code|url|base64|thumbnail|oauth|token|media/i.test(JSON.stringify(topPins)),false);
+  assert.deepEqual(topPinsQuery,{start_date:"2026-07-20",end_date:"2026-08-18",sort_by:"OUTBOUND_CLICK",from_claimed_content:"BOTH",pin_format:"ALL",app_types:"ALL",content_type:"ORGANIC",metric_types:"IMPRESSION,SAVE,PIN_CLICK,OUTBOUND_CLICK",num_of_pins:"25"});
   const duplicateObservation=await composition.readObservation({ capability: "OwnPins", marketContext: "US", pageSize: 25, correlationIdentifier: "composition-observation-repeat" });
   assert.deepEqual(duplicateObservation.pins,observation.pins);assert.deepEqual(duplicateObservation.audit,observation.audit);assert.equal(duplicateObservation.pins.length,25);assert.equal(boardRequests,2);assert.equal(thumbnailRequests,25);
   analyticsStatus=500;const failed=await composition.readPerformance();assert.equal(failed.state,"Failed");assert.equal(failed.pins.length,25);
@@ -690,6 +698,34 @@ test("live composition routes verification and observation through the governed 
   assert.equal(composition.integration.registry.all()[0].adapterId.value, "PinterestMarketSourceAdapter");
   assert.equal(composition.verificationRepository.current({ value: "ALIVO" } as never)?.state, "Available");
   await runtime.close();
+});
+
+test("trusted Top Pins composition joins readiness by internal Pin ID and discards the ID",()=>{
+  const snapshot=Object.freeze([
+    Object.freeze({pinId:"internal-a",title:"Alpha",boardName:"Board A",thumbnail:null}),
+    Object.freeze({pinId:"internal-b",title:"Bravo",boardName:"Board B",thumbnail:null}),
+  ]);
+  const result=Object.freeze({state:"Available",window:Object.freeze({startDate:"2026-07-20",endDate:"2026-08-18",completedDays:30}),sortBy:"OUTBOUND_CLICK",pins:Object.freeze([
+    Object.freeze({pinId:"internal-b",impressions:20,saves:2,pinClicks:3,outboundClicks:4}),
+    Object.freeze({pinId:"internal-a",impressions:10,saves:1,pinClicks:2,outboundClicks:3}),
+    Object.freeze({pinId:"outside-snapshot",impressions:999,saves:999,pinClicks:999,outboundClicks:999}),
+  ]),stale:false});
+  const ready=Object.freeze({pinId:"internal-a",status:"Ready",issues:Object.freeze([])}),attention=Object.freeze({pinId:"internal-b",status:"NeedsAttention",issues:Object.freeze([
+    Object.freeze({code:"TITLE_MISSING",level:"Required",message:"private required detail"}),
+    Object.freeze({code:"DESCRIPTION_MISSING",level:"Review",message:"private review detail"}),
+  ])}),audit=Object.freeze({state:"Available",analyzedPins:2,readyPins:1,attentionPins:1,issueCounts:Object.freeze({}),pins:Object.freeze([ready,attention])});
+  const joined=rendererSafeTopPins(result as never,snapshot as never,audit as never);
+  assert.deepEqual(joined.pins,[
+    {title:"Bravo",boardName:"Board B",impressions:20,saves:2,pinClicks:3,outboundClicks:4,contentReadiness:{status:"NeedsAttention",issueCount:2,requiredIssueCount:1,reviewIssueCount:1}},
+    {title:"Alpha",boardName:"Board A",impressions:10,saves:1,pinClicks:2,outboundClicks:3,contentReadiness:{status:"Ready",issueCount:0,requiredIssueCount:0,reviewIssueCount:0}},
+  ]);
+  assert.equal(Object.isFrozen(joined),true);assert.equal(Object.isFrozen(joined.pins),true);assert.equal(joined.pins.every(pin=>Object.isFrozen(pin)&&Object.isFrozen(pin.contentReadiness)),true);
+  assert.equal(/internal-|outside-snapshot|TITLE_MISSING|DESCRIPTION_MISSING|private .* detail|pinId|issues|code|message/.test(JSON.stringify(joined)),false);
+  const reordered=rendererSafeTopPins(result as never,snapshot as never,{...audit,pins:[attention,ready]} as never);assert.deepEqual(reordered.pins.map(pin=>pin.contentReadiness?.status),["NeedsAttention","Ready"]);
+  const mismatched=rendererSafeTopPins(result as never,snapshot as never,{...audit,pins:[ready,{...attention,pinId:"other-snapshot"}]} as never);assert.equal(mismatched.pins.every(pin=>pin.contentReadiness===null),true);
+  const malformedAudit={...audit,pins:[ready,{...attention,issues:[{code:"UNKNOWN",level:"Unknown",message:"private"}]}]};
+  const rowLocal=rendererSafeTopPins({...result,pins:[result.pins[1],result.pins[0]]} as never,snapshot as never,malformedAudit as never);
+  assert.deepEqual(rowLocal.pins.map(pin=>pin.contentReadiness?.status??null),["Ready",null]);assert.equal(rowLocal.pins[1].impressions,20);
 });
 
 test("production-shaped missing and rejected media stay non-fatal and never reach the thumbnail fetcher",async()=>{

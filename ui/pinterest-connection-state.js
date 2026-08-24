@@ -150,6 +150,8 @@ function observationState(value) {
   return failureState(value);
 }
 
+const observationSnapshotIdentity=pins=>JSON.stringify((Array.isArray(pins)?pins:[]).slice(0,25).map(pin=>[pin.pinId,pin.title??null,pin.description??null,pin.createdAt??null,pin.boardName,pin.destinationDomain??null,pin.thumbnail!==null]));
+
 export function transition(current, event) {
   const state = current || createPinterestUiState();
   if (event.type === "PRELOAD_MISSING") return Object.freeze({ ...state, uiState: PINTEREST_UI_STATE.PreloadMissing, pendingOAuth: false, message: "Pinterest preload contract is unavailable" });
@@ -190,14 +192,14 @@ export function transition(current, event) {
       : safe.audit;
     const retainedPins = observationStatus === "unavailable" && !safe.pins.length && Array.isArray(state.observation?.pins) ? state.observation.pins : safe.pins;
     const observation = Object.freeze({ ...safe, pins: retainedPins, audit: retainedAudit });
-    const priorIds=(state.observation?.pins??[]).map(pin=>pin.pinId).join("\u0000"),nextIds=retainedPins.map(pin=>pin.pinId).join("\u0000");
-    const performance=priorIds&&priorIds===nextIds?state.performance:safePerformance();
+    const priorSnapshot=observationSnapshotIdentity(state.observation?.pins??[]),nextSnapshot=observationSnapshotIdentity(retainedPins);
+    const performance=priorSnapshot!=="[]"&&priorSnapshot===nextSnapshot?state.performance:safePerformance();
     const accountPerformance=next===PINTEREST_UI_STATE.ReauthorizationRequired?safeAccountPerformance():state.accountPerformance;
-    const topPins=next===PINTEREST_UI_STATE.ReauthorizationRequired?safeTopPins():priorIds&&priorIds===nextIds?state.topPins:safeTopPins();
+    const topPins=next===PINTEREST_UI_STATE.ReauthorizationRequired?safeTopPins():priorSnapshot!=="[]"&&priorSnapshot===nextSnapshot?state.topPins:safeTopPins();
     return Object.freeze({ ...state, uiState: next, performance, accountPerformance, topPins, pendingOAuth: false, observation, observationStatus, message: safeMessage(event.value) || (next === PINTEREST_UI_STATE.ObservationRead ? "Read-only Pinterest observation received" : "Pinterest observation is unavailable") });
   }
   if (event.type === "ACCOUNT_PERFORMANCE_RESULT") return Object.freeze({ ...state, accountPerformance: safeAccountPerformance(event.value) });
-  if (event.type === "TOP_PINS_RESULT") return Object.freeze({ ...state, topPins: safeTopPins(event.value, state.observation?.pins ?? []) });
+  if (event.type === "TOP_PINS_RESULT") return Object.freeze({ ...state, topPins: safeTopPins(event.value) });
   if (event.type === "PERFORMANCE_RESULT") return Object.freeze({ ...state, performance: safePerformance(event.value, state.observation?.pins ?? []) });
   return state;
 }
@@ -267,14 +269,30 @@ function safeAccountPerformance(value) {
   const stale=value.stale===true&&["Unavailable","RateLimited","Failed"].includes(state)&&window!==null;
   return Object.freeze({state,window,latestAvailableDate,totals,daily:Object.freeze(daily),stale});
 }
-function safeTopPins(value, snapshot = []) {
+const plainRecord=value=>{
+  if(!value||typeof value!=="object"||Array.isArray(value))return false;
+  const prototype=Object.getPrototypeOf(value);return prototype===null||prototype===Object.prototype||Object.getPrototypeOf(prototype)===null&&Object.prototype.hasOwnProperty.call(prototype,"constructor")&&prototype.constructor?.name==="Object";
+};
+const safeTopPinContentReadiness=value=>{
+  if(value===null)return null;
+  if(!plainRecord(value))return null;
+  const keys=Object.keys(value).sort(),expected=["issueCount","requiredIssueCount","reviewIssueCount","status"];
+  if(keys.length!==expected.length||keys.some((key,index)=>key!==expected[index]))return null;
+  const count=item=>typeof item==="number"&&Number.isSafeInteger(item)&&item>=0&&item<=12?item:null;
+  const issueCount=count(value.issueCount),requiredIssueCount=count(value.requiredIssueCount),reviewIssueCount=count(value.reviewIssueCount),status=value.status;
+  if(!["Ready","NeedsAttention"].includes(status)||issueCount===null||requiredIssueCount===null||reviewIssueCount===null||requiredIssueCount+reviewIssueCount!==issueCount)return null;
+  if(status==="Ready"&&(issueCount!==0||requiredIssueCount!==0||reviewIssueCount!==0))return null;
+  if(status==="NeedsAttention"&&issueCount===0)return null;
+  return Object.freeze({status,issueCount,requiredIssueCount,reviewIssueCount});
+};
+function safeTopPins(value) {
   const empty=()=>Object.freeze({state:"NotRead",window:null,sortBy:null,pins:Object.freeze([]),stale:false});
-  if(!value||typeof value!=="object")return empty();
+  if(!plainRecord(value))return empty();
   const states=new Set(["NotRead","Available","NoData","Unavailable","RateLimited","ReauthorizationRequired","Failed"]),state=states.has(value.state)?value.state:"Failed";
   if(state==="ReauthorizationRequired")return Object.freeze({...empty(),state});
   const date=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null,number=value=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:null;
   const startDate=date(value.window?.startDate),endDate=date(value.window?.endDate),window=startDate&&endDate&&startDate<=endDate&&value.window?.completedDays===30?Object.freeze({startDate,endDate,completedDays:30}):null;
-  const allowed=new Set(snapshot.slice(0,25).map(pin=>pin.pinId)),seen=new Set(),pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{const pinId=typeof pin?.pinId==="string"?pin.pinId:"";if(!allowed.has(pinId)||seen.has(pinId))return[];seen.add(pinId);return[Object.freeze({pinId,impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks)})]}):[];
+  const pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{if(!plainRecord(pin))return[];return[Object.freeze({title:text(pin.title,"Untitled Pin").slice(0,160),boardName:text(pin.boardName,"Unknown board").slice(0,160),impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks),contentReadiness:safeTopPinContentReadiness(pin.contentReadiness)})]}):[];
   return Object.freeze({state,window,sortBy:value.sortBy==="OUTBOUND_CLICK"?"OUTBOUND_CLICK":null,pins:Object.freeze(pins),stale:value.stale===true&&["Unavailable","RateLimited","Failed"].includes(state)&&window!==null});
 }
 function safeContentAudit(value, pins) {
