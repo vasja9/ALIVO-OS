@@ -32,6 +32,11 @@ export interface PinterestContentAuditIssue {
   readonly message: string;
 }
 
+export interface PinterestContentAuditRule {
+  readonly level: "Required" | "Review";
+  readonly message: string;
+}
+
 export interface PinterestContentAuditPin {
   readonly pinId: string;
   readonly status: "Ready" | "NeedsAttention";
@@ -47,7 +52,7 @@ export interface PinterestContentAuditResult {
   readonly pins: readonly PinterestContentAuditPin[];
 }
 
-const RULES: Readonly<Record<PinterestContentAuditCode, Readonly<{ level: "Required" | "Review"; message: string }>>> = Object.freeze({
+export const PINTEREST_CONTENT_AUDIT_RULES: Readonly<Record<PinterestContentAuditCode, Readonly<PinterestContentAuditRule>>> = Object.freeze({
   TITLE_MISSING: Object.freeze({ level: "Required", message: "Add a Pin title." }),
   TITLE_TOO_LONG: Object.freeze({ level: "Required", message: "Shorten the title to 100 characters or fewer." }),
   DESTINATION_MISSING: Object.freeze({ level: "Required", message: "Add a destination to alivo.eu." }),
@@ -127,7 +132,7 @@ export function auditPinterestContent(input: readonly PinterestContentAuditInput
     if (placeholderContent(title, description)) codes.add("POSSIBLE_TEST_CONTENT");
     const issues = PINTEREST_CONTENT_AUDIT_CODES.filter(code => codes.has(code)).map(code => {
       counts[code] += 1;
-      return Object.freeze({ code, ...RULES[code] });
+      return Object.freeze({ code, ...PINTEREST_CONTENT_AUDIT_RULES[code] });
     });
     return Object.freeze({ pinId: pin.pinId, status: issues.length ? "NeedsAttention" as const : "Ready" as const, issues: Object.freeze(issues) });
   });

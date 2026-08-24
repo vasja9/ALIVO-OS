@@ -285,6 +285,14 @@ const safeTopPinContentReadiness=value=>{
   if(status==="NeedsAttention"&&issueCount===0)return null;
   return Object.freeze({status,issueCount,requiredIssueCount,reviewIssueCount});
 };
+const safeTopPinContentReadinessDetails=(value,summary)=>{
+  if(value===null||!summary||!plainRecord(value)||!Array.isArray(value.required)||!Array.isArray(value.review)||value.required.length+value.review.length>12)return null;
+  const seen=new Set(),safeGroup=(items,level)=>{const accepted=[];let priorIndex=-1;for(const message of items){if(typeof message!=="string"||seen.has(message))return null;const index=AUDIT_CODES.findIndex(code=>AUDIT_RULES[code].level===level&&AUDIT_RULES[code].message===message);if(index<=priorIndex)return null;seen.add(message);priorIndex=index;accepted.push(message)}return Object.freeze(accepted.slice())};
+  const required=safeGroup(value.required,"Required"),review=safeGroup(value.review,"Review");
+  if(!required||!review||required.length!==summary.requiredIssueCount||review.length!==summary.reviewIssueCount||required.length+review.length!==summary.issueCount)return null;
+  if(summary.status==="Ready"&&(required.length||review.length)||summary.status==="NeedsAttention"&&!required.length&&!review.length)return null;
+  return Object.freeze({required,review});
+};
 function safeTopPins(value) {
   const empty=()=>Object.freeze({state:"NotRead",window:null,sortBy:null,pins:Object.freeze([]),stale:false});
   if(!plainRecord(value))return empty();
@@ -292,7 +300,7 @@ function safeTopPins(value) {
   if(state==="ReauthorizationRequired")return Object.freeze({...empty(),state});
   const date=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null,number=value=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:null;
   const startDate=date(value.window?.startDate),endDate=date(value.window?.endDate),window=startDate&&endDate&&startDate<=endDate&&value.window?.completedDays===30?Object.freeze({startDate,endDate,completedDays:30}):null;
-  const pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{if(!plainRecord(pin))return[];return[Object.freeze({title:text(pin.title,"Untitled Pin").slice(0,160),boardName:text(pin.boardName,"Unknown board").slice(0,160),impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks),contentReadiness:safeTopPinContentReadiness(pin.contentReadiness)})]}):[];
+  const pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{if(!plainRecord(pin))return[];const contentReadiness=safeTopPinContentReadiness(pin.contentReadiness);return[Object.freeze({title:text(pin.title,"Untitled Pin").slice(0,160),boardName:text(pin.boardName,"Unknown board").slice(0,160),impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks),contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(pin.contentReadinessDetails,contentReadiness)})]}):[];
   return Object.freeze({state,window,sortBy:value.sortBy==="OUTBOUND_CLICK"?"OUTBOUND_CLICK":null,pins:Object.freeze(pins),stale:value.stale===true&&["Unavailable","RateLimited","Failed"].includes(state)&&window!==null});
 }
 function safeContentAudit(value, pins) {

@@ -17,7 +17,7 @@ import { registerPinterestProductionProvider } from "./PinterestProductionProvid
 import type { PinterestProductionProviderRegistration } from "./PinterestProductionProviderRegistration.ts";
 import { PINTEREST_THUMBNAIL_TOTAL_MAX_BYTES, fetchPinterestThumbnail, fetchPinterestThumbnails, safeThumbnailDto, selectPinterestThumbnail } from "./PinterestThumbnailSecurity.ts";
 import type { PinterestSafeThumbnail, PinterestThumbnailSource } from "./PinterestThumbnailSecurity.ts";
-import { auditPinterestContent, emptyPinterestContentAudit, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
+import { auditPinterestContent, emptyPinterestContentAudit, PINTEREST_CONTENT_AUDIT_CODES, PINTEREST_CONTENT_AUDIT_RULES, withPinterestContentAuditState } from "./PinterestContentReadinessAudit.ts";
 import type { PinterestContentAuditPin, PinterestContentAuditResult } from "./PinterestContentReadinessAudit.ts";
 import { emptyPinterestAccountAnalytics, parsePinterestAccountAnalytics, PINTEREST_ACCOUNT_ORGANIC_METRICS, withPinterestAccountAnalyticsState } from "./PinterestAccountAnalytics.ts";
 import { emptyPinterestOrganicAnalytics, parsePinterestOrganicAnalytics, pinterestCompletedUtcWindow, PINTEREST_ORGANIC_METRICS, withPinterestOrganicAnalyticsState } from "./PinterestOrganicAnalytics.ts";
@@ -71,6 +71,11 @@ export interface PinterestTopPinContentReadiness {
   readonly reviewIssueCount:number;
 }
 
+export interface PinterestTopPinContentReadinessDetails {
+  readonly required:readonly string[];
+  readonly review:readonly string[];
+}
+
 export interface PinterestRendererSafeTopPin {
   readonly title:string;
   readonly boardName:string;
@@ -79,6 +84,7 @@ export interface PinterestRendererSafeTopPin {
   readonly pinClicks:number|null;
   readonly outboundClicks:number|null;
   readonly contentReadiness:PinterestTopPinContentReadiness|null;
+  readonly contentReadinessDetails:PinterestTopPinContentReadinessDetails|null;
 }
 
 export interface PinterestRendererSafeTopPinsResult extends Omit<PinterestTopPinsResult,"pins"> {
@@ -98,13 +104,29 @@ const safeTopPinContentReadiness=(value:PinterestContentAuditPin|undefined):Pint
   if((value.status==="Ready"&&issueCount!==0)||(value.status==="NeedsAttention"&&issueCount===0))return null;
   return Object.freeze({status:value.status,issueCount,requiredIssueCount,reviewIssueCount});
 };
+const safeTopPinContentReadinessDetails=(value:PinterestContentAuditPin|undefined,summary:PinterestTopPinContentReadiness|null):PinterestTopPinContentReadinessDetails|null=>{
+  if(!value||!summary||!Array.isArray(value.issues)||value.issues.length>12)return null;
+  const issuesByCode=new Map<string,Readonly<{level:"Required"|"Review";message:string}>>();
+  for(const issue of value.issues){
+    if(!issue||typeof issue!=="object"||Array.isArray(issue)||typeof issue.code!=="string"||issuesByCode.has(issue.code))return null;
+    const rule=PINTEREST_CONTENT_AUDIT_RULES[issue.code as keyof typeof PINTEREST_CONTENT_AUDIT_RULES];
+    if(!rule||issue.level!==rule.level||issue.message!==rule.message)return null;
+    issuesByCode.set(issue.code,Object.freeze({level:rule.level,message:rule.message}));
+  }
+  const required:string[]=[],review:string[]=[];
+  for(const code of PINTEREST_CONTENT_AUDIT_CODES){const issue=issuesByCode.get(code);if(issue)(issue.level==="Required"?required:review).push(issue.message);}
+  if(required.length+review.length!==summary.issueCount||required.length!==summary.requiredIssueCount||review.length!==summary.reviewIssueCount)return null;
+  if(summary.status==="Ready"&&(required.length||review.length)||summary.status==="NeedsAttention"&&!required.length&&!review.length)return null;
+  return Object.freeze({required:Object.freeze(required.slice()),review:Object.freeze(review.slice())});
+};
 
 export function rendererSafeTopPins(result:PinterestTopPinsResult,snapshot:readonly PinterestRendererSafePin[],audit:PinterestContentAuditResult):PinterestRendererSafeTopPinsResult {
   const snapshotById=new Map(snapshot.slice(0,25).map(pin=>[pin.pinId,pin]));
   const auditById=sameAuditSnapshot(snapshot,audit)?new Map(audit.pins.map(pin=>[pin.pinId,pin])):new Map<string,PinterestContentAuditPin>();
   const pins=result.pins.slice(0,25).flatMap(metrics=>{
     const pin=snapshotById.get(metrics.pinId);if(!pin)return[];
-    return[Object.freeze({title:pin.title??"Untitled Pin",boardName:pin.boardName||"Unknown board",impressions:metrics.impressions,saves:metrics.saves,pinClicks:metrics.pinClicks,outboundClicks:metrics.outboundClicks,contentReadiness:safeTopPinContentReadiness(auditById.get(metrics.pinId))})];
+    const auditedPin=auditById.get(metrics.pinId),contentReadiness=safeTopPinContentReadiness(auditedPin);
+    return[Object.freeze({title:pin.title??"Untitled Pin",boardName:pin.boardName||"Unknown board",impressions:metrics.impressions,saves:metrics.saves,pinClicks:metrics.pinClicks,outboundClicks:metrics.outboundClicks,contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(auditedPin,contentReadiness)})];
   });
   return Object.freeze({...result,pins:Object.freeze(pins)});
 }
