@@ -36,7 +36,7 @@ let accountPerformanceInFlight = false;
 let topPinsInFlight = false;
 let performanceInFlight = false;
 let accountTrendMetric = "impressions";
-let topPinsTableSession = { result: null, filter: "all", sort: { key: "rank", direction: "ascending" }, expandedRank: null, selectedOrders: Object.freeze([]) };
+let topPinsTableSession = { result: null, filter: "all", sort: { key: "rank", direction: "ascending" }, expandedRank: null, selectedOrders: Object.freeze([]), reviewedOrders: Object.freeze([]), reviewFilter: "all" };
 let pollAttempts = 0;
 
 const api = () => globalThis.window?.alivoPinterest;
@@ -197,11 +197,12 @@ function attentionView() {
     const empty = createElement("article", "card empty");
     empty.append(createElement("h2", "", "Attention"), createElement("p", "", "No Pins need attention"));
     fragment.append(empty);
-    return fragment;
+  } else {
+    const list = createElement("div", "pin-list");
+    for (const pin of attentionPins) list.append(pinCard(pin, true));
+    fragment.append(list);
   }
-  const list = createElement("div", "pin-list");
-  for (const pin of attentionPins) list.append(pinCard(pin, true));
-  fragment.append(list);
+  fragment.append(topPinsReviewWorkspace());
   return fragment;
 }
 
@@ -397,13 +398,43 @@ function syncTopPinsTableSession(result){
   const retainedStale=topPinsTableSession.result!==null&&result?.stale===true&&Array.isArray(result.pins)&&result.pins.length>0;
   const expandedRank=retainedStale&&Number.isSafeInteger(topPinsTableSession.expandedRank)&&topPinsTableSession.expandedRank>0&&topPinsTableSession.expandedRank<=Math.min(25,result.pins.length)?topPinsTableSession.expandedRank:null;
   const selectedOrders=retainedStale?topPinsReviewSelection(topPinsTableSession.selectedOrders,Math.min(25,result.pins.length)):Object.freeze([]);
-  topPinsTableSession=retainedStale?{...topPinsTableSession,result,expandedRank,selectedOrders}:{result,filter:"all",sort:{key:"rank",direction:"ascending"},expandedRank:null,selectedOrders:Object.freeze([])};
+  const reviewedOrders=retainedStale?topPinsReviewedSelection(topPinsTableSession.reviewedOrders,selectedOrders,Math.min(25,result.pins.length)):Object.freeze([]),reviewFilter=retainedStale?topPinsReviewWorkspaceFilter(topPinsTableSession.reviewFilter):"all";
+  topPinsTableSession=retainedStale?{...topPinsTableSession,result,expandedRank,selectedOrders,reviewedOrders,reviewFilter}:{result,filter:"all",sort:{key:"rank",direction:"ascending"},expandedRank:null,selectedOrders:Object.freeze([]),reviewedOrders:Object.freeze([]),reviewFilter:"all"};
 }
 
 function topPinsReviewSelection(value,rowCount){
   const limit=Math.min(25,Number.isSafeInteger(rowCount)&&rowCount>0?rowCount:0),seen=new Set(),accepted=[];
   for(const item of Array.isArray(value)?value:[]){if(!Number.isSafeInteger(item)||item<0||item>=limit||seen.has(item))continue;seen.add(item);accepted.push(item)}
   return Object.freeze(accepted.sort((left,right)=>left-right).slice(0,25));
+}
+
+const topPinsReviewWorkspaceFilter=value=>["all","pending","reviewed"].includes(value)?value:"all";
+
+function topPinsReviewedSelection(value,selectedOrders,rowCount){
+  const selected=new Set(topPinsReviewSelection(selectedOrders,rowCount));
+  return Object.freeze(topPinsReviewSelection(value,rowCount).filter(item=>selected.has(item)));
+}
+
+function updateTopPinsReviewSelection(value,rowCount){
+  const selectedOrders=topPinsReviewSelection(value,rowCount),reviewedOrders=topPinsReviewedSelection(topPinsTableSession.reviewedOrders,selectedOrders,rowCount);
+  topPinsTableSession={...topPinsTableSession,selectedOrders,reviewedOrders};return selectedOrders;
+}
+
+function updateTopPinsReviewedSelection(value,rowCount){
+  const selectedOrders=topPinsReviewSelection(topPinsTableSession.selectedOrders,rowCount),reviewedOrders=topPinsReviewedSelection(value,selectedOrders,rowCount);
+  topPinsTableSession={...topPinsTableSession,selectedOrders,reviewedOrders};return reviewedOrders;
+}
+
+function topPinsSafeRows(result){
+  const rows=[];
+  for(const pin of (Array.isArray(result?.pins)?result.pins:[]).slice(0,25)){
+    if(!pin||typeof pin!=="object")continue;
+    const readiness=pin.contentReadiness&&["Ready","NeedsAttention"].includes(pin.contentReadiness.status)&&[pin.contentReadiness.issueCount,pin.contentReadiness.requiredIssueCount,pin.contentReadiness.reviewIssueCount].every(value=>Number.isSafeInteger(value)&&value>=0)&&pin.contentReadiness.issueCount===pin.contentReadiness.requiredIssueCount+pin.contentReadiness.reviewIssueCount&&pin.contentReadiness.issueCount<=12?Object.freeze({status:pin.contentReadiness.status,issueCount:pin.contentReadiness.issueCount,requiredIssueCount:pin.contentReadiness.requiredIssueCount,reviewIssueCount:pin.contentReadiness.reviewIssueCount}):null;
+    const required=Array.isArray(pin.contentReadinessDetails?.required)?pin.contentReadinessDetails.required.slice(0,12):null,review=Array.isArray(pin.contentReadinessDetails?.review)?pin.contentReadinessDetails.review.slice(0,12):null,details=readiness&&required&&review&&required.length+review.length<=12&&required.length===readiness.requiredIssueCount&&review.length===readiness.reviewIssueCount&&[...required,...review].every(message=>typeof message==="string")?Object.freeze({required:Object.freeze(required.slice()),review:Object.freeze(review.slice())}):null;
+    const impressions=comparisonInteger(pin.impressions),saves=comparisonInteger(pin.saves),pinClicks=comparisonInteger(pin.pinClicks),outboundClicks=comparisonInteger(pin.outboundClicks);
+    rows.push(Object.freeze({rank:rows.length+1,title:pin.title,boardName:pin.boardName,impressions,saves,pinClicks,outboundClicks,saveRate:observedRate(saves,impressions),pinClickRate:observedRate(pinClicks,impressions),outboundClickRate:observedRate(outboundClicks,impressions),contentReadiness:readiness,contentReadinessDetails:details}));
+  }
+  return Object.freeze(rows.slice());
 }
 
 function topPinsTable(sourceRows,account,topPins){
@@ -422,15 +453,44 @@ function topPinsTable(sourceRows,account,topPins){
   const renderTable=()=>{
     const selectedOrders=topPinsReviewSelection(topPinsTableSession.selectedOrders,rows.length),selectedSet=new Set(selectedOrders),derivedRows=rows.map(item=>Object.freeze({...item,manuallySelected:selectedSet.has(item.sourceOrder)})),filters=filterDefinitions.map(filter=>Object.freeze({...filter,count:derivedRows.filter(filter.matches).length})),selected=filters.find(filter=>filter.key===topPinsTableSession.filter)??filters[0],column=topPinsColumns.find(item=>item.key===topPinsTableSession.sort.key)??topPinsColumns[0],filtered=derivedRows.filter(selected.matches),renderedRows=stableTopPinsRows(filtered.slice(),column,topPinsTableSession.sort.direction);
     for(const button of filterButtons){const filter=filters.find(item=>item.key===button.dataset.topPinsFilter);button.textContent=`${filter.label} (${filter.count})`;button.setAttribute("aria-pressed",String(filter.key===selected.key))}
-    selectionSummary.textContent=`Manually selected for review: ${selectedOrders.length} of ${rows.length} snapshot-matched Top Pins.`;selectionActions.replaceChildren();if(selectedOrders.length){const clear=createElement("button","top-pins-review-clear","Clear review selection");clear.type="button";clear.onclick=()=>{topPinsTableSession={...topPinsTableSession,selectedOrders:Object.freeze([])};renderTable()};selectionActions.append(clear)}
+    selectionSummary.textContent=`Manually selected for review: ${selectedOrders.length} of ${rows.length} snapshot-matched Top Pins.`;selectionActions.replaceChildren();if(selectedOrders.length){const clear=createElement("button","top-pins-review-clear","Clear review selection");clear.type="button";clear.onclick=()=>{updateTopPinsReviewSelection([],rows.length);renderTable()};selectionActions.append(clear)}
     resultCount.textContent=`Showing ${renderedRows.length} of ${rows.length} snapshot-matched Top Pins.`;empty.textContent=selected.key==="selected"?"No Top Pins are selected for review.":"No Top Pins match this local filter.";empty.hidden=renderedRows.length!==0;
     const header=createElement("tr");
     for(const item of topPinsColumns){const cell=createElement("th"),button=createElement("button","top-pins-sort"),indicator=createElement("span","top-pins-sort-indicator");cell.setAttribute("scope","col");const active=topPinsTableSession.sort.key===item.key;cell.setAttribute("aria-sort",active?topPinsTableSession.sort.direction:"none");button.type="button";button.dataset.topPinsSort=item.key;button.append(createElement("span","",item.label),indicator);indicator.setAttribute("aria-hidden","true");if(active)indicator.textContent=topPinsTableSession.sort.direction==="ascending"?"▲":"▼";button.onclick=()=>{const direction=active?(topPinsTableSession.sort.direction==="ascending"?"descending":"ascending"):(item.type==="text"?"ascending":"descending");topPinsTableSession={...topPinsTableSession,sort:{key:item.key,direction}};renderTable()};cell.append(button);header.append(cell)}
     const rendered=renderedRows.map(item=>{const row=createElement("tr"),pinCell=createElement("td"),reviewControl=createElement("div","top-pins-review-control"),reviewToggle=createElement("button","top-pins-review-toggle",item.manuallySelected?"Remove from review":"Select for review"),statusLine=createElement("div","top-pins-readiness-line"),detailsControl=topPinsReadinessDetailsControl(item.contentReadiness,item.contentReadinessDetails,item.rank,topPinsTableSession.expandedRank===item.rank,()=>{topPinsTableSession={...topPinsTableSession,expandedRank:topPinsTableSession.expandedRank===item.rank?null:item.rank};renderTable()});
-    reviewToggle.type="button";reviewToggle.setAttribute("aria-pressed",String(item.manuallySelected));reviewToggle.setAttribute("aria-label",item.manuallySelected?`Remove ${item.title} from manual review`:`Select ${item.title} for manual review`);reviewToggle.onclick=()=>{const current=topPinsReviewSelection(topPinsTableSession.selectedOrders,rows.length),next=item.manuallySelected?current.filter(value=>value!==item.sourceOrder):current.includes(item.sourceOrder)?current:[...current,item.sourceOrder];topPinsTableSession={...topPinsTableSession,selectedOrders:topPinsReviewSelection(next,rows.length)};renderTable()};reviewControl.append(reviewToggle);if(item.manuallySelected)reviewControl.append(createElement("span","top-pins-review-selected","Selected for review"));statusLine.append(topPinsReadinessControl(item.contentReadiness,()=>{topPinsTableSession={...topPinsTableSession,filter:"attention"};renderTable()}));if(detailsControl)statusLine.append(detailsControl);pinCell.append(createElement("div","top-pins-title",item.title),reviewControl,statusLine);row.append(createElement("td","",item.rank),pinCell,createElement("td","",item.boardName));for(const key of ["impressions","saves","pinClicks","outboundClicks"])row.append(createElement("td","",dailyMetricValue(item[key])));for(const key of ["saveRate","pinClickRate","outboundClickRate"])row.append(createElement("td","",observedRateValue(item[key])));row.append(createElement("td","",topPinsOutboundDifferenceValue(item.outboundVsAccount)));return row});
+    reviewToggle.type="button";reviewToggle.setAttribute("aria-pressed",String(item.manuallySelected));reviewToggle.setAttribute("aria-label",item.manuallySelected?`Remove ${item.title} from manual review`:`Select ${item.title} for manual review`);reviewToggle.onclick=()=>{const current=topPinsReviewSelection(topPinsTableSession.selectedOrders,rows.length),next=item.manuallySelected?current.filter(value=>value!==item.sourceOrder):current.includes(item.sourceOrder)?current:[...current,item.sourceOrder];updateTopPinsReviewSelection(next,rows.length);renderTable()};reviewControl.append(reviewToggle);if(item.manuallySelected)reviewControl.append(createElement("span","top-pins-review-selected","Selected for review"));statusLine.append(topPinsReadinessControl(item.contentReadiness,()=>{topPinsTableSession={...topPinsTableSession,filter:"attention"};renderTable()}));if(detailsControl)statusLine.append(detailsControl);pinCell.append(createElement("div","top-pins-title",item.title),reviewControl,statusLine);row.append(createElement("td","",item.rank),pinCell,createElement("td","",item.boardName));for(const key of ["impressions","saves","pinClicks","outboundClicks"])row.append(createElement("td","",dailyMetricValue(item[key])));for(const key of ["saveRate","pinClickRate","outboundClickRate"])row.append(createElement("td","",observedRateValue(item[key])));row.append(createElement("td","",topPinsOutboundDifferenceValue(item.outboundVsAccount)));return row});
     head.replaceChildren(header);body.replaceChildren(...rendered);
   };
   for(const filter of filterDefinitions){const button=createElement("button","top-pins-filter",filter.label);button.type="button";button.dataset.topPinsFilter=filter.key;button.onclick=()=>{topPinsTableSession={...topPinsTableSession,filter:filter.key};renderTable()};filterButtons.push(button);buttons.append(button)}controls.append(label,buttons);renderTable();table.append(head,body);wrapper.append(table);section.append(summary,controls,createElement("p","top-pins-filter-copy","Local table filters use only the current snapshot. They do not score or recommend Pins."),createElement("p","top-pins-review-copy","Manual local selection only. Pins are not scored, recommended, edited, or saved."),selectionSummary,selectionActions,resultCount,empty,wrapper);return section;
+}
+
+function topPinsReviewWorkspaceDetails(details){
+  const container=createElement("div","top-pins-review-workspace-details");
+  if(!details){container.append(createElement("p","top-pins-review-workspace-details-unavailable","Readiness details unavailable."));return container}
+  const required=details.required.slice(0,12),review=details.review.slice(0,12-required.length),requiredGroup=createElement("section","top-pins-review-detail-group required"),reviewGroup=createElement("section","top-pins-review-detail-group review");
+  requiredGroup.append(createElement("h4","","Required readiness details"));if(required.length){for(const message of required)requiredGroup.append(createElement("p","",message))}else requiredGroup.append(createElement("p","","None."));
+  reviewGroup.append(createElement("h4","","Review readiness details"));if(review.length){for(const message of review)reviewGroup.append(createElement("p","",message))}else reviewGroup.append(createElement("p","","None."));
+  container.append(requiredGroup,reviewGroup);return container;
+}
+
+function topPinsReviewWorkspaceCard(item,selectedOrders,reviewedOrders,rowCount,contextStale,topPinsStale){
+  const card=createElement("article","top-pins-review-workspace-card"),heading=createElement("h3","top-pins-review-workspace-card-title",item.title),meta=createElement("p","top-pins-review-workspace-meta",`Endpoint rank: #${item.rank} · Board: ${item.boardName}`),metrics=createElement("dl","top-pins-review-workspace-metrics"),readiness=createElement("p",`state top-pins-review-workspace-readiness ${topPinsReadinessClass(item.contentReadiness)}`,topPinsReadinessText(item.contentReadiness)),status=createElement("p","top-pins-review-workspace-status",`Review status: ${item.reviewed?"Reviewed":"Pending"}`),actions=createElement("div","top-pins-review-workspace-actions"),toggle=createElement("button","top-pins-review-workspace-toggle",item.reviewed?"Mark pending":"Mark reviewed"),remove=createElement("button","top-pins-review-workspace-remove","Remove from review selection");
+  for(const [label,value] of [["Impressions",dailyMetricValue(item.impressions)],["Saves",dailyMetricValue(item.saves)],["Pin clicks",dailyMetricValue(item.pinClicks)],["Outbound clicks",dailyMetricValue(item.outboundClicks)],["Outbound click rate",observedRateValue(item.outboundClickRate)],["Outbound vs account",topPinsOutboundDifferenceValue(item.outboundVsAccount)]])metrics.append(createElement("dt","",label),createElement("dd","",value));
+  toggle.type="button";toggle.setAttribute("aria-pressed",String(item.reviewed));toggle.setAttribute("aria-label",item.reviewed?`Mark ${item.title} pending in manual review`:`Mark ${item.title} reviewed in manual review`);toggle.onclick=()=>{const next=item.reviewed?reviewedOrders.filter(value=>value!==item.sourceOrder):[...reviewedOrders,item.sourceOrder];updateTopPinsReviewedSelection(next,rowCount);render()};
+  remove.type="button";remove.setAttribute("aria-label",`Remove ${item.title} from review selection`);remove.onclick=()=>{updateTopPinsReviewSelection(selectedOrders.filter(value=>value!==item.sourceOrder),rowCount);render()};actions.append(toggle,remove);
+  card.append(heading,meta,metrics,readiness,topPinsReviewWorkspaceDetails(item.contentReadinessDetails),status);if(topPinsStale)card.append(createElement("p","top-pins-review-workspace-stale","Retained Top Pins context; data may be stale."));if(contextStale&&!topPinsStale)card.append(createElement("p","top-pins-review-workspace-stale","Retained same-period account context; data may be stale."));card.append(actions);return card;
+}
+
+function topPinsReviewWorkspace(){
+  const section=createElement("section","card top-pins-review-workspace"),heading=createElement("h2","top-pins-review-workspace-heading","Manual Top Pins review"),disclosure=createElement("p","top-pins-review-workspace-disclosure","Local review status only. No Pin content or Pinterest state is changed."),meaning=createElement("p","top-pins-review-workspace-meaning","Reviewed means only that the CEO completed the local review step. It does not mean content was fixed, saved, published, or updated."),summary=createElement("p","top-pins-review-workspace-summary"),controls=createElement("div","top-pins-review-workspace-filters"),actions=createElement("div","top-pins-review-workspace-clear"),cards=createElement("div","top-pins-review-workspace-cards");
+  heading.id="manual-top-pins-review-heading";section.setAttribute("aria-labelledby",heading.id);summary.setAttribute("aria-live","polite");controls.setAttribute("role","group");controls.setAttribute("aria-label","Filter manually selected Top Pins by review status");
+  const result=connection.topPins;syncTopPinsTableSession(result);const rows=topPinsSafeRows(result),rowCount=rows.length,selectedOrders=topPinsReviewSelection(topPinsTableSession.selectedOrders,rowCount),reviewedOrders=topPinsReviewedSelection(topPinsTableSession.reviewedOrders,selectedOrders,rowCount),selectedSet=new Set(selectedOrders),reviewedSet=new Set(reviewedOrders),context=topPinsOutboundContext(connection.accountPerformance,result),selectedRows=rows.flatMap((item,sourceOrder)=>selectedSet.has(sourceOrder)?[Object.freeze({...item,sourceOrder,reviewed:reviewedSet.has(sourceOrder),outboundVsAccount:topPinsOutboundDifference(item,context)})]:[]),pending=selectedRows.length-reviewedOrders.length,activeFilter=topPinsReviewWorkspaceFilter(topPinsTableSession.reviewFilter);
+  const filters=Object.freeze([{key:"all",label:"All selected",matches:()=>true},{key:"pending",label:"Pending review",matches:item=>!item.reviewed},{key:"reviewed",label:"Reviewed",matches:item=>item.reviewed}].map(item=>Object.freeze({...item,count:selectedRows.filter(item.matches).length})));
+  for(const filter of filters){const button=createElement("button","top-pins-review-workspace-filter",`${filter.label} (${filter.count})`);button.type="button";button.dataset.topPinsWorkspaceFilter=filter.key;button.setAttribute("aria-pressed",String(filter.key===activeFilter));button.onclick=()=>{topPinsTableSession={...topPinsTableSession,reviewFilter:filter.key};render()};controls.append(button)}
+  summary.textContent=`Manual review workspace: ${selectedRows.length} selected · ${pending} pending · ${reviewedOrders.length} reviewed.`;
+  if(selectedRows.length){const clear=createElement("button","top-pins-review-workspace-clear-action","Clear review selection");clear.type="button";clear.onclick=()=>{updateTopPinsReviewSelection([],rowCount);render()};actions.append(clear)}
+  const filtered=selectedRows.filter((filters.find(item=>item.key===activeFilter)??filters[0]).matches);if(!selectedRows.length)cards.append(createElement("p","top-pins-review-workspace-empty","No Top Pins are selected for manual review."));else if(!filtered.length)cards.append(createElement("p","top-pins-review-workspace-empty","No selected Top Pins match this review status."));else for(const item of filtered)cards.append(topPinsReviewWorkspaceCard(item,selectedOrders,reviewedOrders,rowCount,context?.stale===true,result?.stale===true));
+  section.append(heading,disclosure,meaning,summary,controls,actions,cards);return section;
 }
 
 function topPinsView(){
@@ -448,8 +508,7 @@ function topPinsView(){
   else if(result?.state==="ReauthorizationRequired"){card.append(createElement("p","","Reauthorize Pinterest before reading Top Pins."));return card}
   if(result?.window)card.append(createElement("p","pin-performance-window",`${accountDay(result.window.startDate)} to ${accountDay(result.window.endDate)} · 30 completed UTC days`));
   if(result?.state==="NoData")card.append(createElement("p","","No safely joinable Top Pins were available for this date window."));
-  const rows=[];
-  for(const pin of (result?.pins??[]).slice(0,25))rows.push(Object.freeze({rank:rows.length+1,title:pin.title,boardName:pin.boardName,impressions:pin.impressions,saves:pin.saves,pinClicks:pin.pinClicks,outboundClicks:pin.outboundClicks,saveRate:observedRate(pin.saves,pin.impressions),pinClickRate:observedRate(pin.pinClicks,pin.impressions),outboundClickRate:observedRate(pin.outboundClicks,pin.impressions),contentReadiness:pin.contentReadiness,contentReadinessDetails:pin.contentReadinessDetails}));
+  const rows=topPinsSafeRows(result);
   if(result?.window){const immutableRows=Object.freeze(rows.slice()),contributionRows=Object.freeze(immutableRows.map(item=>Object.freeze({impressions:item.impressions,saves:item.saves,pinClicks:item.pinClicks,outboundClicks:item.outboundClicks}))),account=connection.accountPerformance,contributionAccount=Object.freeze({state:account?.state,stale:account?.stale===true,window:account?.window?Object.freeze({startDate:account.window.startDate,endDate:account.window.endDate,completedDays:account.window.completedDays}):null,totals:account?.totals?Object.freeze({impressions:account.totals.impressions,saves:account.totals.saves,pinClicks:account.totals.pinClicks,outboundClicks:account.totals.outboundClicks}):null}),contributionTopPins=Object.freeze({state:result.state,stale:result.stale===true,window:Object.freeze({startDate:result.window.startDate,endDate:result.window.endDate,completedDays:result.window.completedDays})});if(rows.length)card.append(createElement("h3","","Observed rates"),createElement("p","quiet","Descriptive event ratios for the selected 30-day window. They are not predictions, conversion attribution, or causal analysis."),topPinsComparison(immutableRows,contributionAccount,contributionTopPins));const contribution=topPinsContribution(contributionAccount,contributionTopPins,contributionRows);if(contribution)card.append(contribution);if(rows.length)card.append(topPinsTable(immutableRows,contributionAccount,contributionTopPins))}
   return card;
 }
