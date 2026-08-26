@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 class HarnessNode {
-  constructor(tagName = "fragment", namespaceURI = null) {
+  constructor(tagName = "fragment", namespaceURI = null, ownerDocument = undefined) {
     this.tagName = tagName.toUpperCase();
     this.namespaceURI = namespaceURI;
+    this.ownerDocument = ownerDocument;
     this.children = [];
     this.parentNode = undefined;
     this.dataset = Object.create(null);
@@ -14,6 +15,9 @@ class HarnessNode {
     this.disabled = false;
     this.type = "";
     this.onclick = undefined;
+    this.focusCallCount = 0;
+    this.scrollIntoViewCallCount = 0;
+    this.lastScrollIntoViewOptions = undefined;
     this._text = "";
   }
   append(...nodes) {
@@ -53,6 +57,14 @@ class HarnessNode {
   pressKey(key) {
     if (this.tagName === "BUTTON" && (key === "Enter" || key === " ")) return this.click();
   }
+  focus() {
+    this.focusCallCount += 1;
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
+  scrollIntoView(options) {
+    this.scrollIntoViewCallCount += 1;
+    this.lastScrollIntoViewOptions = options;
+  }
   set textContent(value) {
     this._text = String(value ?? "");
     this.children = [];
@@ -90,23 +102,25 @@ class HarnessNode {
 }
 
 class HarnessFragment extends HarnessNode {
-  constructor() {
-    super("fragment");
+  constructor(ownerDocument) {
+    super("fragment", null, ownerDocument);
   }
 }
 
 class HarnessDocument extends HarnessNode {
   constructor() {
     super("document");
+    this.ownerDocument = this;
+    this.activeElement = undefined;
   }
   createElement(tagName) {
-    return new HarnessNode(tagName);
+    return new HarnessNode(tagName, null, this);
   }
   createElementNS(namespaceURI, tagName) {
-    return new HarnessNode(tagName, namespaceURI);
+    return new HarnessNode(tagName, namespaceURI, this);
   }
   createDocumentFragment() {
-    return new HarnessFragment();
+    return new HarnessFragment(this);
   }
 }
 
@@ -114,12 +128,12 @@ function createDocument() {
   const document = new HarnessDocument();
   const ids = ["pin-loading", "pin-error", "pin-overview", "pin-view-content", "pin-attention-count"];
   document.append(...ids.map(id => {
-    const node = new HarnessNode("div");
+    const node = document.createElement("div");
     node.setAttribute("id", id);
     return node;
   }));
   const tabs = ["overview", "queue", "all", "timing", "scheduled", "published", "performance", "attention"].map(view => {
-    const tab = new HarnessNode("button");
+    const tab = document.createElement("button");
     tab.dataset.pinView = view;
     return tab;
   });
