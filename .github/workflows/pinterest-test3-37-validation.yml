@@ -1,0 +1,161 @@
+name: Pinterest test.3.37 Windows validation (no release)
+
+# Isolated validation for source commit da37ab847c4d0839d0baac48f95922baeac58206.
+# This workflow never creates or updates a tag or release.
+on:
+  push:
+    branches:
+      - agent/pinterest-lifecycle-variant-brief-test.3.37-validation
+    paths:
+      - .github/workflows/pinterest-test3-37-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    name: Build and audit Windows test.3.37 package (no release)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    if: >-
+      github.repository == 'vasja9/ALIVO-OS' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/agent/pinterest-lifecycle-variant-brief-test.3.37-validation' &&
+      github.run_attempt == 1
+    env:
+      ALIVO_PORTABLE_PACKAGE_SUFFIX: test.3.37-validation
+      CI: "true"
+    steps:
+      - name: Check out the exact test.3.37 source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: da37ab847c4d0839d0baac48f95922baeac58206
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable source and no-release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "da37ab847c4d0839d0baac48f95922baeac58206"
+          test "$(git rev-parse HEAD^)" = "61127d07bdc0883ec7d8e66ebf4f0a21760552e0"
+          if git show-ref --verify --quiet refs/tags/pinterest-oauth-test.3.37; then
+            echo "Unexpected test.3.37 tag exists before source validation."
+            exit 1
+          fi
+          test -z "$(git status --porcelain --untracked-files=all)"
+          echo "Verified immutable test.3.37 source. Validation only; no release is permitted."
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Verify public package sources
+        run: npm run verify:package-sources
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Electron binary
+        run: npx install-electron
+
+      - name: Run unit and Pinterest validation gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm run test:pinterest:dom
+          npm run test:pinterest:electron-windows
+          npm run test:pinterest:local-config
+
+      - name: Scan tracked source for private credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nI -E -- '-----BEGIN (RSA|EC|OPENSSH|DSA|PRIVATE) KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82}' -- ':!ci/templates/pinterest-oauth-test3.36-windows.yml'; then
+            echo "Potential private credential material found in tracked source."
+            exit 1
+          fi
+
+      - name: Build and verify Electron sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          npm run desktop:smoke
+          node --check electron/pinterest-lifecycle-evidence-memory.cjs
+          node --check electron/pinterest-lifecycle.cjs
+          node --check electron/pinterest-ipc-controller.cjs
+          node --check electron/pinterest-runtime.cjs
+          node --check electron/main.cjs
+          node --check electron/preload.cjs
+          node --check ui/pinterest.js
+          node --check ui/pinterest-connection-state.js
+          python scripts/audit_build0.py
+
+      - name: Verify portable packaging rules
+        run: npm run package:verify
+
+      - name: Build deterministic unsigned portable package
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run package:portable:windows
+
+      - name: Audit generated validation archive and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = Get-Item -LiteralPath "release/ALIVO-OS-Pinterest-OAuth-test.3.37-validation-win-x64.zip"
+          $sidecar = Get-Item -LiteralPath "release/ALIVO-OS-Pinterest-OAuth-test.3.37-validation-win-x64.zip.sha256"
+          $records = @(Get-Content -LiteralPath $sidecar.FullName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+          if ($records.Count -ne 1) { throw "Validation sidecar must contain exactly one SHA-256 record" }
+          $record = [regex]::Match($records[0], '^([0-9a-fA-F]{64}) {2}' + [regex]::Escape($zip.Name) + '$')
+          if (-not $record.Success) { throw "Validation sidecar has an invalid hash or ZIP filename" }
+          $expected = $record.Groups[1].Value.ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -cne $actual) { throw "Validation ZIP checksum does not match its sidecar" }
+
+          $auditDirectory = Join-Path $env:RUNNER_TEMP "alivo-test.3.37-validation-audit-$env:GITHUB_RUN_ID"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $auditDirectory
+          $forbidden = Get-ChildItem -LiteralPath $auditDirectory -Recurse -Force | Where-Object {
+            $_.FullName -match '(^|[\\/])(?:tests?|coverage|src|scripts|\.local|\.git|node_modules)(?:[\\/]|$)' -or
+            $_.Name -match '\.map$|^\.env(?:\.|$)|pinterest-(?:local-config|lifecycle-evidence|sessions)\.enc'
+          }
+          if ($forbidden) { throw "Validation ZIP contains forbidden paths: $($forbidden.FullName -join ', ')" }
+          if (-not (Test-Path -LiteralPath (Join-Path $auditDirectory "ALIVO-OS-Pinterest-OAuth-test.3.37-validation-win-x64/ALIVO OS.exe"))) {
+            throw "Validation ZIP does not contain ALIVO OS.exe"
+          }
+
+          Write-Output "Validation ZIP bytes: $($zip.Length)"
+          Write-Output "Validation sidecar bytes: $($sidecar.Length)"
+          Write-Output "Calculated SHA-256: $actual"
+          Write-Output "Recorded SHA-256: $expected"
+          @(
+            "## test.3.37 validation only - not a GitHub release",
+            "",
+            "Source commit: da37ab847c4d0839d0baac48f95922baeac58206",
+            "Base commit: 61127d07bdc0883ec7d8e66ebf4f0a21760552e0",
+            "Validation run: $env:GITHUB_RUN_ID; attempt: $env:GITHUB_RUN_ATTEMPT",
+            "ZIP: $($zip.Name); bytes: $($zip.Length)",
+            "Sidecar: $($sidecar.Name); bytes: $($sidecar.Length)",
+            "Calculated SHA-256: $actual",
+            "Recorded SHA-256: $expected",
+            "No release, tag, source branch, or repository content is written by this workflow."
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Preserve verified package as an Actions artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pinterest-test.3.37-validation-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            release/ALIVO-OS-Pinterest-OAuth-test.3.37-validation-win-x64.zip
+            release/ALIVO-OS-Pinterest-OAuth-test.3.37-validation-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+          archive: true
