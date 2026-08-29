@@ -23,6 +23,8 @@ import { emptyPinterestAccountAnalytics, parsePinterestAccountAnalytics, PINTERE
 import { emptyPinterestOrganicAnalytics, parsePinterestOrganicAnalytics, pinterestCompletedUtcWindow, PINTEREST_ORGANIC_METRICS, withPinterestOrganicAnalyticsState } from "./PinterestOrganicAnalytics.ts";
 import { emptyPinterestTopPins, parsePinterestTopPins, PINTEREST_TOP_PINS_METRICS, withPinterestTopPinsState } from "./PinterestTopPinsAnalytics.ts";
 import type { PinterestTopPinsResult } from "./PinterestTopPinsAnalytics.ts";
+import { pinterestPinLifecycleEvidence } from "./PinterestPinLifecycleEvidence.ts";
+import type { PinterestPinLifecycleEvidence } from "./PinterestPinLifecycleEvidence.ts";
 
 const ADAPTER_ID = new MarketSourceAdapterId("PinterestMarketSourceAdapter");
 const APPROVED_CAPABILITIES = Object.freeze(["AnalyticsObservation", "MarketObservation", "OwnBoards", "OwnPins", "PerformanceObservation", "TrendObservation"].map((value) => new MarketSourceCapability(value)));
@@ -83,6 +85,7 @@ export interface PinterestRendererSafeTopPin {
   readonly saves:number|null;
   readonly pinClicks:number|null;
   readonly outboundClicks:number|null;
+  readonly lifecycle:PinterestPinLifecycleEvidence;
   readonly contentReadiness:PinterestTopPinContentReadiness|null;
   readonly contentReadinessDetails:PinterestTopPinContentReadinessDetails|null;
 }
@@ -126,7 +129,7 @@ export function rendererSafeTopPins(result:PinterestTopPinsResult,snapshot:reado
   const pins=result.pins.slice(0,25).flatMap(metrics=>{
     const pin=snapshotById.get(metrics.pinId);if(!pin)return[];
     const auditedPin=auditById.get(metrics.pinId),contentReadiness=safeTopPinContentReadiness(auditedPin);
-    return[Object.freeze({title:pin.title??"Untitled Pin",boardName:pin.boardName||"Unknown board",impressions:metrics.impressions,saves:metrics.saves,pinClicks:metrics.pinClicks,outboundClicks:metrics.outboundClicks,contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(auditedPin,contentReadiness)})];
+    return[Object.freeze({title:pin.title??"Untitled Pin",boardName:pin.boardName||"Unknown board",impressions:metrics.impressions,saves:metrics.saves,pinClicks:metrics.pinClicks,outboundClicks:metrics.outboundClicks,lifecycle:pinterestPinLifecycleEvidence(pin.createdAt??null,result.window?.endDate??null,metrics.outboundClicks),contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(auditedPin,contentReadiness)})];
   });
   return Object.freeze({...result,pins:Object.freeze(pins)});
 }
@@ -143,9 +146,9 @@ export function rendererSafePins(observations:readonly {type:string;observedAt:D
     const canonical=canonicalPayload(observation);if(!canonical)continue;
     if(canonical.resourceType!=="pin")continue;
     const pinId=optionalText(canonical.resourceId,128);if(!pinId)continue;
-    const observedAt=observation.observedAt instanceof Date&&Number.isFinite(observation.observedAt.getTime())?observation.observedAt.toISOString():undefined;
+    const createdAt=typeof canonical.createdAt==="string"&&Number.isFinite(Date.parse(canonical.createdAt))&&new Date(canonical.createdAt).toISOString()===canonical.createdAt?canonical.createdAt:undefined;
     const title=optionalCodePointText(canonical.title,160),description=optionalCodePointText(canonical.description,1000),boardId=optionalText(canonical.boardReference,128),domain=destinationDomain(canonical.link);
-    pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(observedAt&&{createdAt:observedAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain}),thumbnail:null}));
+    pins.push(Object.freeze({pinId,...(title&&{title}),...(description&&{description}),...(createdAt&&{createdAt}),boardName:boardId&&boards.get(boardId)||"Unknown board",...(domain&&{destinationDomain:domain}),thumbnail:null}));
   }
   return Object.freeze(pins.sort((left,right)=>(right.createdAt??"").localeCompare(left.createdAt??"")||left.pinId.localeCompare(right.pinId)).slice(0,25));
 }

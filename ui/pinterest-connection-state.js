@@ -293,6 +293,17 @@ const safeTopPinContentReadinessDetails=(value,summary)=>{
   if(summary.status==="Ready"&&(required.length||review.length)||summary.status==="NeedsAttention"&&!required.length&&!review.length)return null;
   return Object.freeze({required,review});
 };
+const topPinAgeCohortForAge=value=>!Number.isSafeInteger(value)||value<0?"Unknown":value<=59?"Days0To59":value<=90?"Days60To90":value<=180?"Days91To180":value<=600?"Days181To600":"Days601Plus";
+const topPinLifecycleEndExclusive=value=>{if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;const parsed=new Date(`${value}T00:00:00.000Z`);return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===value?parsed.getTime()+86400000:null};
+const safeTopPinLifecycle=(value,windowEndDate)=>{
+  if(!plainRecord(value))return null;
+  const keys=Object.keys(value).sort(),expected=["cohort","completedAgeDays","coverage","createdAt","outboundState"];
+  if(keys.length!==expected.length||keys.some((key,index)=>key!==expected[index])||value.coverage!=="Observed30CompletedUtcDays")return null;
+  const createdAt=typeof value.createdAt==="string"&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.createdAt)&&Number.isFinite(Date.parse(value.createdAt))&&new Date(value.createdAt).toISOString()===value.createdAt?value.createdAt:null;
+  const completedAgeDays=Number.isSafeInteger(value.completedAgeDays)&&value.completedAgeDays>=0?value.completedAgeDays:null,cohort=topPinAgeCohortForAge(completedAgeDays),outboundState=["ReachedAlivoEu","NoOutboundClickInWindow","Unavailable"].includes(value.outboundState)?value.outboundState:null,endDate=topPinLifecycleEndExclusive(windowEndDate),calculatedAge=createdAt&&endDate!==null&&Date.parse(createdAt)<endDate?Math.floor((endDate-Date.parse(createdAt))/86400000):null;
+  if(value.createdAt!==createdAt||value.completedAgeDays!==completedAgeDays||value.cohort!==cohort||outboundState===null||(createdAt===null&&completedAgeDays!==null)||(createdAt!==null&&calculatedAge!==completedAgeDays))return null;
+  return Object.freeze({createdAt,completedAgeDays,cohort,outboundState,coverage:"Observed30CompletedUtcDays"});
+};
 function safeTopPins(value) {
   const empty=()=>Object.freeze({state:"NotRead",window:null,sortBy:null,pins:Object.freeze([]),stale:false});
   if(!plainRecord(value))return empty();
@@ -300,7 +311,7 @@ function safeTopPins(value) {
   if(state==="ReauthorizationRequired")return Object.freeze({...empty(),state});
   const date=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value:null,number=value=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0?value:null;
   const startDate=date(value.window?.startDate),endDate=date(value.window?.endDate),window=startDate&&endDate&&startDate<=endDate&&value.window?.completedDays===30?Object.freeze({startDate,endDate,completedDays:30}):null;
-  const pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{if(!plainRecord(pin))return[];const contentReadiness=safeTopPinContentReadiness(pin.contentReadiness);return[Object.freeze({title:text(pin.title,"Untitled Pin").slice(0,160),boardName:text(pin.boardName,"Unknown board").slice(0,160),impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks),contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(pin.contentReadinessDetails,contentReadiness)})]}):[];
+  const pins=Array.isArray(value.pins)?value.pins.slice(0,25).flatMap(pin=>{if(!plainRecord(pin))return[];const contentReadiness=safeTopPinContentReadiness(pin.contentReadiness);return[Object.freeze({title:text(pin.title,"Untitled Pin").slice(0,160),boardName:text(pin.boardName,"Unknown board").slice(0,160),impressions:number(pin.impressions),saves:number(pin.saves),pinClicks:number(pin.pinClicks),outboundClicks:number(pin.outboundClicks),lifecycle:safeTopPinLifecycle(pin.lifecycle,endDate),contentReadiness,contentReadinessDetails:safeTopPinContentReadinessDetails(pin.contentReadinessDetails,contentReadiness)})]}):[];
   return Object.freeze({state,window,sortBy:value.sortBy==="OUTBOUND_CLICK"?"OUTBOUND_CLICK":null,pins:Object.freeze(pins),stale:value.stale===true&&["Unavailable","RateLimited","Failed"].includes(state)&&window!==null});
 }
 function safeContentAudit(value, pins) {
