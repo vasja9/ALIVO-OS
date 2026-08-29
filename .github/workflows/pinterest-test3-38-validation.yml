@@ -2,6 +2,7 @@ name: Pinterest test.3.38 Windows validation (no release)
 
 # Isolated validation for source commit 34412d93b23e84a4a0b601c369ae4932779f762e.
 # This workflow never creates or updates a tag or release.
+# The validation ref is fast-forwarded to this file to emit one path-scoped push event.
 on:
   push:
     branches:
