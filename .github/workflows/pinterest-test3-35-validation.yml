@@ -1,6 +1,6 @@
 name: Pinterest test.3.35 Windows validation (no release)
 
-# Isolated validation for source commit b31db77ee7096ebd0de42fdaea300696f66ea340.
+# Isolated validation for source commit 73de2368d1e1db6fe57aa2ad6d455304d9c00aae.
 # This workflow never creates or updates a tag or release.
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       - name: Check out the exact test.3.35 source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: b31db77ee7096ebd0de42fdaea300696f66ea340
+          ref: 73de2368d1e1db6fe57aa2ad6d455304d9c00aae
           fetch-depth: 0
           persist-credentials: false
 
@@ -37,9 +37,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "b31db77ee7096ebd0de42fdaea300696f66ea340"
-          test "$(git rev-parse HEAD^)" = "57f9bb92b558f521de300b58e256b60cb730ee0b"
-          test "$(git rev-parse HEAD^^)" = "0c42ea5ebf03d1756e82365e1fdb8da9ea573480"
+          test "$(git rev-parse HEAD)" = "73de2368d1e1db6fe57aa2ad6d455304d9c00aae"
+          test "$(git rev-parse HEAD^)" = "b31db77ee7096ebd0de42fdaea300696f66ea340"
+          test "$(git rev-parse HEAD^^)" = "57f9bb92b558f521de300b58e256b60cb730ee0b"
+          test "$(git rev-parse HEAD^^^)" = "0c42ea5ebf03d1756e82365e1fdb8da9ea573480"
           if git show-ref --verify --quiet refs/tags/pinterest-oauth-test.3.35; then
             echo "Unexpected test.3.35 tag exists before source validation."
             exit 1
@@ -136,7 +137,7 @@ jobs:
           @(
             "## test.3.35 validation only - not a GitHub release",
             "",
-            "Source commit: b31db77ee7096ebd0de42fdaea300696f66ea340",
+            "Source commit: 73de2368d1e1db6fe57aa2ad6d455304d9c00aae",
             "Base commit: 0c42ea5ebf03d1756e82365e1fdb8da9ea573480",
             "Validation run: $env:GITHUB_RUN_ID; attempt: $env:GITHUB_RUN_ATTEMPT",
             "ZIP: $($zip.Name); bytes: $($zip.Length)",
