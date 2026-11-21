@@ -18,3 +18,16 @@ test("validation failure preserves Draft and governed revision preserves history
 test("configured provider limits, originality, claims and fields fail deterministically",()=>{const {workflow,writer}=setup();writer.generate=(context)=>({copy:{title:"x".repeat(101),description:"copy",cta:"read",language:"de",topic:"sleep routine",destinationReference:"article-17",ctaObjective:PinterestCTAObjective.ReadArticle,originalExpression:false,usedKnowledgeReferences:["knowledge-1"],usedKeywordTerms:["invented metric"],unsupportedClaims:["guaranteed cure"],providerFields:["unknown"]},provenance:{capabilityReference:"fake",generatedAt:at}});const artifact=workflow.produce(request()).artifacts[0];assert.equal(artifact.status,PinterestCopyStatus.ValidationFailed);assert.ok(artifact.validation!.reasons.length>=5);});
 test("variants require explicit experiment and retain independent identity and hypothesis",()=>{assert.throws(()=>setup().workflow.produce(request({variants:2})),/approved experiment/);const result=setup(plan(PinterestCreationPlanState.ReadyForProduction,1,"de",{})).workflow.produce(request({variants:2}));assert.deepEqual(result.artifacts.map(x=>x.variantId),["variant-1","variant-2"]);assert.ok(result.artifacts.every(x=>x.lineage.hypothesis==="approved hypothesis"));});
 test("workflow exposes no image, publishing, scheduling, or network operation",()=>{const methods=Object.getOwnPropertyNames(PinterestCopyProductionWorkflow.prototype);assert.deepEqual(methods.filter(x=>/image|prompt|publish|schedule|network/i.test(x)),[]);});
+
+test("ALIVO Pinterest writer receives locked policy and copy must lead with a solution",()=>{
+ const {workflow,writer}=setup();
+ const output=workflow.produce(request()).artifacts[0];
+ assert.equal(writer.calls[0].marketingPolicy?.primaryValue,"solution");
+ assert.equal(output.status,PinterestCopyStatus.ReadyForCreativeAssembly);
+ const bad=setup();
+ const generate=bad.writer.generate.bind(bad.writer);
+ bad.writer.generate=(context)=>{const result=generate(context);return {...result,copy:{...result.copy,marketingEvidence:{primaryValue:"experience" as const,readerProblem:"Sleep",usefulNextStep:"Practical guidance"}}};};
+ const artifact=bad.workflow.produce(request()).artifacts[0];
+ assert.equal(artifact.status,PinterestCopyStatus.ValidationFailed);
+ assert.ok(artifact.validation?.reasons.some(x=>x.includes("SolutionNotPrimary")));
+});
