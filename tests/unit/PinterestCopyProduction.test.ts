@@ -31,3 +31,11 @@ test("ALIVO Pinterest writer receives locked policy and copy must lead with a so
  assert.equal(artifact.status,PinterestCopyStatus.ValidationFailed);
  assert.ok(artifact.validation?.reasons.some(x=>x.includes("SolutionNotPrimary")));
 });
+
+test("Pinterest copy without a credible basis when leading with certainty fails validation", () => {
+ const x=setup(),generate=x.writer.generate.bind(x.writer);
+ x.writer.generate=(context)=>{const result=generate(context);return {...result,copy:{...result.copy,marketingEvidence:{...result.copy.marketingEvidence,primaryNeed:"certainty" as const}}};};
+ const artifact=x.workflow.produce(request()).artifacts[0];
+ assert.equal(artifact.status,PinterestCopyStatus.ValidationFailed);
+ assert.ok(artifact.validation?.reasons.some(x=>x.includes("ReliabilityBasisMissing")));
+});
