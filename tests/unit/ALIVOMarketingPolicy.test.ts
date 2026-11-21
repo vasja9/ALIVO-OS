@@ -9,6 +9,8 @@ import {
 
 const aligned: MarketingAlignmentEvidence = {
   primaryValue: "solution",
+  primaryNeed: "clarity",
+  needBenefit: "A practical explanation of possible causes",
   readerProblem: "Why am I tired after meals?",
   usefulNextStep: "Explain possible causes and practical questions to explore",
   convenienceSupport: "A clear, organized guide",
@@ -22,6 +24,11 @@ test("approved and immutable hierarchy is solution > convenience > experience", 
   assert.equal(ALIVO_MARKETING_POLICY.primaryValue, "solution");
   assert.deepEqual(ALIVO_MARKETING_POLICY.valueOrder, ["solution", "convenience", "experience"]);
   assert.ok(Object.isFrozen(ALIVO_MARKETING_POLICY.valueOrder));
+  assert.deepEqual(ALIVO_MARKETING_POLICY.needPriority, ["clarity", "certainty", "time", "connection", "status"]);
+  assert.equal(ALIVO_MARKETING_POLICY.defaultPrimaryNeed, "clarity");
+  assert.equal(ALIVO_MARKETING_POLICY.communicationPromise, "SOLUTION → CLARITY → TRUST");
+  assert.equal(ALIVO_MARKETING_POLICY.reference, "alivo:marketing:solution-convenience-experience:v2");
+  assert.ok(Object.isFrozen(ALIVO_MARKETING_POLICY.needPriority));
   assert.equal(marketingPolicyForBusinessPackage("ALIVO"), ALIVO_MARKETING_POLICY);
   assert.equal(marketingPolicyForBusinessPackage("BEST-FINDS"), undefined);
   assert.deepEqual(review("Discover why meal-related tiredness can occur."), []);
@@ -51,4 +58,26 @@ test("Facebook external links only belong in a comment; internal Facebook links 
 });
 test("other business packages are not accidentally controlled by ALIVO marketing rules", () => {
   assert.deepEqual(reviewMarketingMessage({businessPackageId:"BEST-FINDS",channel:"facebook",text:"Buy now https://example.com"}),[]);
+});
+
+test("all five needs are valid as one declared dominant motivation", () => {
+  for (const primaryNeed of ALIVO_MARKETING_POLICY.needPriority) {
+    const evidence: MarketingAlignmentEvidence = {
+      ...aligned,
+      primaryNeed,
+      reliabilityBasis: primaryNeed === "certainty" ? "Approved educational sources and stated limitations" : undefined,
+    };
+    assert.deepEqual(review("A clear, practical health guide.",{evidence: evidence}), [], primaryNeed);
+  }
+});
+test("a selected need must have a concrete benefit and a credible basis for certainty", () => {
+  assert.ok(review("Useful information.",{evidence:{...aligned,primaryNeed:"" as never}})
+    .some(x=>x.code==="PrimaryNeedMissing"));
+  assert.ok(review("Useful information.",{evidence:{...aligned,needBenefit:" "}})
+    .some(x=>x.code==="NeedBenefitMissing"));
+  assert.ok(review("Useful information.",{evidence:{...aligned,primaryNeed:"certainty"}})
+    .some(x=>x.code==="ReliabilityBasisMissing"));
+  assert.deepEqual(review("A sourced explanation of healthy habits.",{evidence:{
+    ...aligned,primaryNeed:"certainty",reliabilityBasis:"Approved scientific references",
+  }}),[]);
 });
