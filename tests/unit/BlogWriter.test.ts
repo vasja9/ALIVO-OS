@@ -21,3 +21,17 @@ test("approved contextual Books, natural Primary CTA, and internal links pass wi
 test("anti-AI rhythm, rhetorical template, mechanical rhythm, generic intro, and sales tone are signals",()=>{const paragraphs=["In today's fast-paced world.","This is why.","This is why.","Buy now."].map((x,i)=>new BlogDraftParagraph(`p${i}`,x,["library:english-master:v3"],["library:english-master:v3"]));const c=content(),styled=new BlogDraftContent(c.h1,c.headings,paragraphs,c.bookLinks,c.internalLinks,c.cta),codes=service({write:()=>material(styled)}).execute(request(),plan()).draft.validation.issues.map(x=>x.code);for(const code of ["ExcessiveOneSentenceParagraphs","RepeatedRhetoricalTemplate","MechanicalSectionRhythm","GenericIntroduction","AggressiveSalesTone"])assert.ok(codes.includes(code));});
 test("validation is not approval and capability-scoped trust cannot be self-promoted",()=>{const draft=service().execute(request(),plan()).draft;assert.equal(draft.publicationMode,BlogDraftPublicationMode.CEOApprovalRequired);assert.equal(draft.state,BlogDraftState.ReadyForCEOReview);assert.equal(Object.values(BlogTrustCapability).includes(BlogTrustCapability.LibraryWrite),true);assert.equal("approve" in service(),false);assert.equal("publish" in service(),false);});
 test("Draft revision creates a new immutable version and requests contain no secrets",()=>{const repo=new BlogDraftRepository(),s=new BlogWriterService(repo,{write:()=>material()},undefined,()=>at);s.execute(request(),plan());s.execute(request(2),plan());assert.equal(repo.history(new BlogDraftId("draft-1")).length,2);assert.throws(()=>s.execute(request(2),plan()),/already exists/);assert.equal(/credential|secret|token/i.test(JSON.stringify(request())),false);});
+
+test("ALIVO writer receives locked solution-first policy and records noncompliance",()=>{
+ let policySeen:any;
+ const good=service({write:(_plan:any,policy:any)=>{policySeen=policy;return material();}}).execute(request(),plan()).draft;
+ assert.equal(policySeen.reference,"alivo:marketing:solution-convenience-experience:v1");
+ assert.equal(good.state,BlogDraftState.ReadyForCEOReview);
+ const wrong=service({write:()=>({...material(),marketingEvidence:{primaryValue:"experience" as const,readerProblem:"Müdigkeit",usefulNextStep:"Erklärung"}})}).execute(request(),plan()).draft;
+ assert.equal(wrong.state,BlogDraftState.RevisionRequired);
+ assert.ok(wrong.validation.issues.some(x=>x.code==="SolutionNotPrimary"));
+ const base=content();
+ const claimed=new BlogDraftContent(base.h1,base.headings,[new BlogDraftParagraph("p1","Guaranteed to cure diabetes instantly.",["library:english-master:v3"],["library:english-master:v3"]),...base.paragraphs.slice(1)],base.bookLinks,base.internalLinks,base.cta);
+ const unsafe=service({write:()=>material(claimed)}).execute(request(),plan()).draft;
+ assert.ok(unsafe.validation.issues.some(x=>x.code==="UnverifiedHealthPromise"));
+});
