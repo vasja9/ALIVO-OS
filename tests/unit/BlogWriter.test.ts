@@ -35,3 +35,11 @@ test("ALIVO writer receives locked solution-first policy and records noncomplian
  const unsafe=service({write:()=>material(claimed)}).execute(request(),plan()).draft;
  assert.ok(unsafe.validation.issues.some(x=>x.code==="UnverifiedHealthPromise"));
 });
+
+test("blog drafts missing a buyer need or practical value require revision", () => {
+ const missingNeed=service({write:()=>({...material(),marketingEvidence:{...material().marketingEvidence,primaryNeed:undefined as never}})}).execute(request(),plan()).draft;
+ assert.equal(missingNeed.state,BlogDraftState.RevisionRequired);
+ assert.ok(missingNeed.validation.issues.some(x=>x.code==="PrimaryNeedMissing"));
+ const missingBenefit=service({write:()=>({...material(),marketingEvidence:{...material().marketingEvidence,needBenefit:"  "}})}).execute(request(),plan()).draft;
+ assert.ok(missingBenefit.validation.issues.some(x=>x.code==="NeedBenefitMissing"));
+});
