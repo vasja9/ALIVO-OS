@@ -23,7 +23,7 @@ test("ALIVO Pinterest writer receives locked policy and copy must lead with a so
  const {workflow,writer}=setup();
  const output=workflow.produce(request()).artifacts[0];
  assert.equal(writer.calls[0].marketingPolicy?.primaryValue,"solution");
- assert.equal(output.status,PinterestCopyStatus.ReadyForCreativeAssembly);
+ assert.equal(output.status,PinterestCopyStatus.ReadyForCreativeAssembly);assert.equal(output.lineage.marketingPolicyReference,"alivo:marketing:solution-convenience-experience:v1");
  const bad=setup();
  const generate=bad.writer.generate.bind(bad.writer);
  bad.writer.generate=(context)=>{const result=generate(context);return {...result,copy:{...result.copy,marketingEvidence:{primaryValue:"experience" as const,readerProblem:"Sleep",usefulNextStep:"Practical guidance"}}};};
