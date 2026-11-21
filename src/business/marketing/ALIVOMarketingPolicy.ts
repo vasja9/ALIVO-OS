@@ -5,10 +5,18 @@
  */
 export type MarketingChannel = "blog" | "pinterest" | "facebook" | "youtube";
 export type MarketingValue = "solution" | "convenience" | "experience";
+/** Customer motivations are distinct from the product-value hierarchy. */
+export type MarketingNeed = "clarity" | "certainty" | "time" | "connection" | "status";
 
 export interface MarketingAlignmentEvidence {
   /** The one dominant customer value in the message. */
   primaryValue: MarketingValue;
+  /** Choose one dominant customer need for this specific piece of content. */
+  primaryNeed: MarketingNeed;
+  /** A concrete, realistic benefit that addresses the selected need. */
+  needBenefit: string;
+  /** Required when selling certainty: the credible informational basis, not a promised outcome. */
+  reliabilityBasis?: string;
   /** The audience's actual question, problem or need, without a diagnosis. */
   readerProblem: string;
   /** The useful understanding or realistic next step the content provides. */
@@ -22,17 +30,22 @@ export interface MarketingAlignmentEvidence {
 export interface MarketingPolicyIssue {
   code: "MarketingEvidenceMissing" | "SolutionNotPrimary" | "ReaderProblemMissing" |
     "UsefulNextStepMissing" | "UnverifiedHealthPromise" | "ManipulativeUrgency" |
-    "FacebookExternalLinkInPost";
+    "FacebookExternalLinkInPost" | "PrimaryNeedMissing" |
+    "NeedBenefitMissing" | "ReliabilityBasisMissing";
   message: string;
 }
 
 export const ALIVO_MARKETING_POLICY = Object.freeze({
-  reference: "alivo:marketing:solution-convenience-experience:v1",
+  reference: "alivo:marketing:solution-convenience-experience:v2",
   approvedBy: "CEO",
   approvedOn: "2026-11-21",
+  updatedOn: "2026-11-21",
   status: "LOCKED",
   primaryValue: "solution" as const,
   valueOrder: Object.freeze(["solution", "convenience", "experience"] as const),
+  needPriority: Object.freeze(["clarity", "certainty", "time", "connection", "status"] as const),
+  defaultPrimaryNeed: "clarity" as const,
+  communicationPromise: "SOLUTION → CLARITY → TRUST",
   philosophy: "Don't fight your body. Work with it.",
   instructions: Object.freeze([
     "Lead with the reader's real problem or question and useful, evidence-grounded understanding.",
@@ -41,6 +54,12 @@ export const ALIVO_MARKETING_POLICY = Object.freeze({
     "Use a relevant, low-pressure next step: helpful answer, blog, free reading sample, then book.",
     "Never promise cures, guaranteed health results, or exploit health fears to sell.",
     "For Facebook posts, keep external URLs out of the post body; place them in a comment.",
+    "Choose the one customer need this content addresses: clarity, certainty, time, connection, or status.",
+    "ALIVO defaults to clarity: explain the reader's question and reduce confusion.",
+    "Certainty means credible sources and transparent limits; never promise a guaranteed outcome.",
+    "Save time through organized, useful information; support connection without invented communities or testimonials.",
+    "Do not exploit shame, fear, or social superiority to market status.",
+    "Document the concrete value, helpful next step and evidence for the selected need.",
     "Keep ALIVO's friendly and approachable tone and the brand philosophy.",
   ]),
   facebookExternalLinkPlacement: "comment" as const,
@@ -89,6 +108,12 @@ export function reviewMarketingMessage(input: {
   if (!evidence) {
     issues.push({code: "MarketingEvidenceMissing", message: "ALIVO marketing alignment evidence is required"});
   } else {
+    if (!ALIVO_MARKETING_POLICY.needPriority.includes(evidence.primaryNeed))
+      issues.push({code: "PrimaryNeedMissing", message: "Choose one valid primary need: clarity, certainty, time, connection or status"});
+    if (!evidence.needBenefit?.trim())
+      issues.push({code: "NeedBenefitMissing", message: "Describe the concrete benefit for the primary need"});
+    if (evidence.primaryNeed === "certainty" && !evidence.reliabilityBasis?.trim())
+      issues.push({code: "ReliabilityBasisMissing", message: "Certainty requires a credible informational basis, not a promised health outcome"});
     if (evidence.primaryValue !== "solution")
       issues.push({code: "SolutionNotPrimary", message: "SOLUTION must be the primary customer value"});
     if (!evidence.readerProblem?.trim())
