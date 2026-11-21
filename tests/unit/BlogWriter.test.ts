@@ -26,7 +26,7 @@ test("ALIVO writer receives locked solution-first policy and records noncomplian
  let policySeen:any;
  const good=service({write:(_plan:any,policy:any)=>{policySeen=policy;return material();}}).execute(request(),plan()).draft;
  assert.equal(policySeen.reference,"alivo:marketing:solution-convenience-experience:v1");
- assert.equal(good.state,BlogDraftState.ReadyForCEOReview);
+ assert.equal(good.state,BlogDraftState.ReadyForCEOReview);assert.equal(good.marketingPolicyReference,"alivo:marketing:solution-convenience-experience:v1");
  const wrong=service({write:()=>({...material(),marketingEvidence:{primaryValue:"experience" as const,readerProblem:"Müdigkeit",usefulNextStep:"Erklärung"}})}).execute(request(),plan()).draft;
  assert.equal(wrong.state,BlogDraftState.RevisionRequired);
  assert.ok(wrong.validation.issues.some(x=>x.code==="SolutionNotPrimary"));
