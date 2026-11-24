@@ -12,6 +12,9 @@ const aligned: MarketingAlignmentEvidence = {
   primaryNeed: "clarity",
   needBenefit: "A practical explanation of possible causes",
   readerProblem: "Why am I tired after meals?",
+  dailyImpact: "Difficulty staying focused in the afternoon",
+  desiredOutcome: "Understand the pattern and have more time for meaningful activities",
+  readerOpening: "Does the afternoon feel harder after a meal?",
   usefulNextStep: "Explain possible causes and practical questions to explore",
   convenienceSupport: "A clear, organized guide",
   experienceSupport: "Feel informed rather than overwhelmed",
@@ -27,7 +30,7 @@ test("approved and immutable hierarchy is solution > convenience > experience", 
   assert.deepEqual(ALIVO_MARKETING_POLICY.needPriority, ["clarity", "certainty", "time", "connection", "status"]);
   assert.equal(ALIVO_MARKETING_POLICY.defaultPrimaryNeed, "clarity");
   assert.equal(ALIVO_MARKETING_POLICY.communicationPromise, "SOLUTION → CLARITY → TRUST");
-  assert.equal(ALIVO_MARKETING_POLICY.reference, "alivo:marketing:solution-convenience-experience:v2");
+  assert.equal(ALIVO_MARKETING_POLICY.reference, "alivo:marketing:solution-convenience-experience:v3");
   assert.ok(Object.isFrozen(ALIVO_MARKETING_POLICY.needPriority));
   assert.equal(marketingPolicyForBusinessPackage("ALIVO"), ALIVO_MARKETING_POLICY);
   assert.equal(marketingPolicyForBusinessPackage("BEST-FINDS"), undefined);
@@ -80,4 +83,15 @@ test("a selected need must have a concrete benefit and a credible basis for cert
   assert.deepEqual(review("A sourced explanation of healthy habits.",{evidence:{
     ...aligned,primaryNeed:"certainty",reliabilityBasis:"Approved scientific references",
   }}),[]);
+});
+
+test("Pain-to-Value is locked and its evidence is required across marketing channels", () => {
+  assert.equal(ALIVO_MARKETING_POLICY.painToValue.status, "LOCKED");
+  assert.ok(Object.isFrozen(ALIVO_MARKETING_POLICY.painToValue.sequence));
+  for (const channel of ["blog","pinterest","facebook","youtube","instagram","tiktok","email","paid-ad","website","other"] as const) {
+    assert.deepEqual(review("Does the afternoon feel harder after a meal?", {channel}), []);
+    for (const [field, code] of [["dailyImpact","DailyImpactMissing"],["desiredOutcome","DesiredOutcomeMissing"],["readerOpening","ReaderOpeningMissing"]] as const) {
+      assert.ok(review("A useful guide", {channel, evidence: {...aligned, [field]: " "}}).some(x=>x.code===code), channel + ":" + field);
+    }
+  }
 });
